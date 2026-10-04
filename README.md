@@ -8,12 +8,14 @@
 
 支持的宿主版本：**DSH Web `0.2.0-rc.2`**。本机验证环境为 Node 24、Linux、Google Chrome。其他系统和 DSH 版本尚未实机验证。
 
-1. 从 [GitHub 试用版发布页](https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.6.3) 下载 `dsh-dafeiyu-patrol-0.6.3.tgz`。
-2. 在 DSH **插件 → 安装** 中填入安装包的本地绝对路径。安装后启用「鲸声守望」，按宿主提示刷新页面。升级已有版本时，先卸载旧包再安装；当前 DSH 的包替换还需要重启进程，以加载新的后端模块，巡查数据会保留。
+1. 在 DSH **插件 → 添加插件** 的“包名或地址”中填入 `https://github.com/KitlingKittyRabbit/dsh-whale-watch`，点击安装。要固定使用0.6.3，可填 `https://github.com/KitlingKittyRabbit/dsh-whale-watch#v0.6.3`。
+2. 安装后启用「鲸声守望」，按宿主提示刷新页面。升级已有版本时，先卸载旧包再安装；当前 DSH 的包替换还需要重启进程，以加载新的后端模块，巡查数据会保留。
 3. 点击左侧 **鲸声守望**，主界面显示工作台。
 4. 先在 **导入文字** 中填入示例，试用模型分析；使用 DSH 已配置的模型，不需要再填密钥。
 5. 需要自动采集时，点击 **打开采集浏览器**，在独立 Chrome 窗口登录小红书，再发起关键词或指定链接巡查。
 6. 阅读原文、配图、上下文和模型依据，点击「已阅」即可从当前列表移除；原文和模型结果保留，在「已阅」中查看，或「恢复未阅」。可导出JSON记录。
+
+仓库地址安装需要仓库已经公开，并能正常连接GitHub。插件运行代码已包含在仓库中，没有额外的构建步骤。已核对DSH支持仓库URL及版本标签；仓库转移公开后仍需实测这条安装路径。GitHub连接不便时，也可从 [试用版发布页](https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.6.3) 下载 `dsh-dafeiyu-patrol-0.6.3.tgz`，在同一个输入框填写安装包的本地绝对路径。
 
 原帖优先通过「在采集浏览器查看」打开，复用采集窗口的登录状态；普通浏览器链接可能再次要求登录。可勾选「仅采集，暂不调用模型」检查能读取多少内容。
 

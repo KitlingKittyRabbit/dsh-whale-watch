@@ -1,0 +1,295 @@
+{
+  "version": "2026-10-05.community-2",
+  "description": "32条人工编写的社区讨论语境样例，覆盖七类行为及相应正常讨论。预期依照已确认规则；非随机抽样，不代表真实准确率。",
+  "cases": [
+    {
+      "id": "sharp-criticism",
+      "label": "尖锐作品批评",
+      "expected": "normal",
+      "why": "批评设计和处理方式，没有辱骂或骚扰动员。",
+      "text": "这个拟人设计我觉得很差，画师这次回应也没有解决问题。我支持继续讨论她的过错。",
+      "context": "围绕拟人作品及公开回应的讨论。"
+    },
+    {
+      "id": "quoted-refutation",
+      "label": "引用攻击并反对",
+      "expected": "normal",
+      "why": "引用的骚扰话语受到明确反驳。",
+      "text": "有人说‘去把她开盒，让她退网’，我反对这种做法。讨论作品可以，骚扰作者不行。",
+      "context": "作者在劝阻骚扰。"
+    },
+    {
+      "id": "sarcasm-refutation",
+      "label": "讽刺围攻行为",
+      "expected": "normal",
+      "why": "后文明确否定围攻，不能只看讽刺句。",
+      "text": "好一个‘维护形象’，把路人骂走就算胜利了？别再围攻普通爱好者了。",
+      "context": "回应有人声称围攻路人是在维护形象。"
+    },
+    {
+      "id": "dissent",
+      "label": "不同立场与圈内规则",
+      "expected": "normal",
+      "why": "表达作品偏好并主张圈内规则，没有把规则强加给圈外。",
+      "text": "我更喜欢男性拟人。我们自己的绘画群会要求转载先征得作者同意，也不要求群外的人接受我们的审美。",
+      "context": "群内介绍作品偏好和转载规则。"
+    },
+    {
+      "id": "reply-refutation",
+      "label": "回复中的反驳",
+      "expected": "normal",
+      "why": "回复否定上级的攻击动员。",
+      "text": "别这样，批评作品不等于可以骚扰作者。",
+      "context": "上级评论：大家一起去她评论区骂她，逼她退网。"
+    },
+    {
+      "id": "harassment-call",
+      "label": "直接骚扰动员",
+      "expected": "review",
+      "why": "号召集体辱骂并逼迫退网。",
+      "text": "大家一起去她评论区骂她，逼她退网，谁敢劝就是对面的人。",
+      "context": "直接号召读者行动，没有引用或反驳标记。"
+    },
+    {
+      "id": "retaliation-group",
+      "label": "以维护形象号召报复",
+      "expected": "review",
+      "why": "号召针对群体扫荡评论区，涉及无关爱好者。",
+      "text": "为了维护大肥鱼，把同人女的评论区都冲烂，一个也别放过！",
+      "context": "公开发出的报复号召。"
+    },
+    {
+      "id": "doxxing-threat",
+      "label": "隐私威胁",
+      "expected": "review",
+      "why": "以公布家庭信息威胁对方。",
+      "text": "她再不删图，我就把她的家庭住址发出来，让大家上门找她。",
+      "context": "针对画师的威胁；这里没有真实地址。"
+    },
+    {
+      "id": "targeted-abuse",
+      "label": "针对作者的人身侮辱",
+      "expected": "review",
+      "why": "侮辱针对作者本人，而非评价作品。",
+      "text": "这个画师就是个废物，人品烂透了，画得再好也不配做人。",
+      "context": "作者直接辱骂画师本人。"
+    },
+    {
+      "id": "missing-parent",
+      "label": "缺失上级评论",
+      "expected": "uncertain",
+      "why": "认可对象缺失，无法判断是否认同骚扰。",
+      "text": "对，就按你说的办。",
+      "context": "这是一条回复，未读取到被回复的评论。",
+      "coverage": {
+        "parentMissing": true
+      }
+    },
+    {
+      "id": "unread-image",
+      "label": "未识别图片",
+      "expected": "uncertain",
+      "why": "图片决定表达内容，不能宣称整篇正常。",
+      "kind": "note",
+      "text": "我对这次争议的看法都写在图里了。",
+      "context": "附图未做OCR。",
+      "coverage": {
+        "imagesUnread": true
+      }
+    },
+    {
+      "id": "truncated",
+      "label": "原文截断",
+      "expected": "uncertain",
+      "why": "缺失后文可能改变作者态度。",
+      "text": "他们说要去评论区找她，我觉得……",
+      "context": "采集内容在这里截断，没有后文。",
+      "coverage": {
+        "textTruncated": true
+      }
+    },
+    {
+      "id": "short-thanks-missing-images",
+      "label": "感谢短评不受所属缺图污染",
+      "expected": "normal",
+      "why": "评论自身只是感谢；所属图缺失无关。",
+      "text": "这样一看的确清楚多了，辛苦帖主！",
+      "context": "所属笔记是事件时间线补档，有13张截图未读取。",
+      "coverage": {
+        "contextImagesUnread": true
+      }
+    },
+    {
+      "id": "target-not-parent",
+      "label": "只分析四字评论而非整篇笔记",
+      "expected": "normal",
+      "why": "目标仅支持补档，不能写成它自己进行了溯源分析。",
+      "text": "正义补档",
+      "context": "所属笔记：个人整理时间线、截图来源和营销号日期，并感谢提供线索的人。配图未读取。",
+      "coverage": {
+        "contextImagesUnread": true
+      }
+    },
+    {
+      "id": "war-metaphor-not-harassment",
+      "label": "夸张出战修辞缺少实际攻击行为",
+      "expected": "normal",
+      "why": "没有具体骚扰对象与骚扰行动；不能凭战争修辞或未读外链判冒充捏造。",
+      "text": "大肥鱼vs子午D！一场侵略战争！战争背后的真相与阴谋，点击外链了解。捍卫二创环境，蓝鲸骑士，即刻出战！",
+      "context": "所属笔记：守护D老师，我们需要你。配图未读取，评论外链未访问。",
+      "coverage": {
+        "contextImagesUnread": true
+      }
+    },
+    {
+      "id": "sarcastic-intellect-abuse",
+      "label": "讽刺也可能是明确人身侮辱",
+      "expected": "review",
+      "why": "直接羞辱对方智力，讽刺不自动免责。",
+      "text": "你不把脑子献祭掉，能说出这种话？你就是个脑残。",
+      "context": "作者直接回复另一位讨论者，没有引用反驳。"
+    },
+    {
+      "id": "short-exclamation-independent",
+      "label": "独立感叹不因缺上级强制存疑",
+      "expected": "normal",
+      "why": "语气或指代不明本身不构成具体问题。",
+      "text": "我去，天才",
+      "context": "所属笔记图片未读取，上级回复也未读取。",
+      "coverage": {
+        "contextImagesUnread": true,
+        "parentMissing": true
+      }
+    },
+    {
+      "id": "dependent-image-comment",
+      "label": "真正依赖未读图的评论仍存疑",
+      "expected": "uncertain",
+      "why": "无法读取其指向图里什么行为。",
+      "text": "就按图里说的干，我也加入。",
+      "context": "目标明确认可图里的行为，图片未读取。",
+      "coverage": {
+        "contextImagesUnread": true
+      }
+    },
+    {
+      "id": "ambiguous-fictional-target",
+      "label": "角色讽喻的对象缺失不能判群体敌意",
+      "expected": "uncertain",
+      "why": "光头和蓝头发的对象未明，不能补成现实群体。",
+      "text": "光头还算轻的，该叫蓝头发裕仁天皇吧",
+      "context": "所属笔记：守护D老师，我们需要你。上级回复和配图未读取。",
+      "coverage": {
+        "parentMissing": true,
+        "contextImagesUnread": true
+      }
+    },
+    {
+      "id": "image-referent-missing",
+      "label": "形象长这样需要实际图片",
+      "expected": "uncertain",
+      "why": "缺失具体画面，不能编出它的样子或完整判断。",
+      "text": "我给它看了男性版设定图，结果它给自己的形象画成这样了",
+      "context": "未读取到评论所指的画面。",
+      "coverage": {
+        "contextImagesUnread": true
+      }
+    },
+    {
+      "id": "ordinary-art-derailing",
+      "label": "普通创作下逼表态",
+      "expected": "review",
+      "why": "没有脏话也在未邀请争议的普通作品下强搬争端、要求切割。",
+      "text": "画得再好也没用，你先表态支持哪边，再把另一边切割掉。",
+      "context": "所属笔记：作者仅展示两种拟人同框的手绘，注明CP／CB随意；正文没有讨论争议。"
+    },
+    {
+      "id": "ordinary-art-review",
+      "label": "普通作品评价",
+      "expected": "normal",
+      "why": "评价画面本身，没有强搬争议或逼站队。",
+      "text": "这张双人图的手部比例可以再调整，蓝色配色很好看。",
+      "context": "所属笔记：普通双人同框手绘展示，没有讨论争议。"
+    },
+    {
+      "id": "invited-dispute-discussion",
+      "label": "作者主动邀请的争议讨论",
+      "expected": "normal",
+      "why": "作者邀请讨论自己的争议观点，评论就事论事，没有人身攻击或强搬争端。",
+      "text": "你这篇把感谢粉丝等同于支持所有攻击，我觉得这一步推论不成立。",
+      "context": "所属笔记：作者主动发表关于画师公开回应的争议分析，并邀请讨论推理。"
+    },
+    {
+      "id": "unrelated-character-derailing",
+      "label": "借无关角色扩大战线",
+      "expected": "review",
+      "why": "明确借当前争议牵连无关角色与作品区，不必硬套成人身攻击。",
+      "text": "结城理也该跟着这次拟人争议一起被踩，看到他的图就刷子午D翻车。",
+      "context": "所属笔记：讨论DeepSeek拟人争议；结城理与事件无关。"
+    },
+    {
+      "id": "design-resemblance",
+      "label": "正常设计比较",
+      "expected": "normal",
+      "why": "仅比较发型，未羞辱、挑衅或要求其他圈子承担责任。",
+      "text": "这个蓝色发型让我想到结城理，都是我喜欢的设计。",
+      "context": "所属笔记：DeepSeek拟人设计展示。"
+    },
+    {
+      "id": "homophone-price-insult",
+      "label": "贬低身价的侮辱变体",
+      "expected": "review",
+      "why": "直接回复现实讨论者，用身价表达羞辱，不是普通价格或作品名称。",
+      "text": "你这种人就值八分钱，别出来丢人了。",
+      "context": "作者直接回复另一位讨论者，未引用或反驳该话。"
+    },
+    {
+      "id": "title-not-insult",
+      "label": "作品名称不自动是侮辱",
+      "expected": "normal",
+      "why": "提及曲名本身，未针对现实人侮辱。",
+      "text": "这段视频的BGM叫飞八分钱，我想找完整曲名。",
+      "context": "所属笔记：音乐讨论，未指向某位讨论者或圈子。"
+    },
+    {
+      "id": "circle-collective-abuse",
+      "label": "对整个圈子开地图炮",
+      "expected": "review",
+      "why": "把所有成员贬为低智并剥夺创作资格，非具体圈规批评。",
+      "text": "整个绘圈都是没脑子的废物，你们全都不配创作。",
+      "context": "评论作者自己的主张，无引用反驳。"
+    },
+    {
+      "id": "group-disrespect-normalization",
+      "label": "认可鄙视群体，无需点名个人",
+      "expected": "review",
+      "why": "目标主动认为鄙视画师群体正常；不是仅描述鄙视链存在，不要求点名某位成员。",
+      "text": "鄙视画师是正常的",
+      "context": "所属笔记在讨论拟人争议中的产粮与圈子关系。上级评论：别管了，再怎么管鄙视链依旧存在。"
+    },
+    {
+      "id": "group-hierarchy-description",
+      "label": "单纯描述鄙视链存在",
+      "expected": "normal",
+      "why": "仅描述现象，没有认可、鼓励或正当化鄙视。",
+      "text": "画师之间也存在鄙视链，这种现象一直都有。",
+      "context": "讨论圈子中的社会现象，作者没有表达赞同。"
+    },
+    {
+      "id": "group-disrespect-refutation",
+      "label": "引用群体鄙视并明确反对",
+      "expected": "normal",
+      "why": "被引用说法受到明确反对，不能把它归为作者自己的态度。",
+      "text": "我反对“鄙视画师是正常的”这种说法，批评作品不等于鄙视整个群体。",
+      "context": "作者劝阻对群体的贬损。"
+    },
+    {
+      "id": "group-style-criticism",
+      "label": "批评群体作品的画风",
+      "expected": "normal",
+      "why": "不喜欢作品风格不等于否定成员的人格或尊严。",
+      "text": "这些画师的画风我都不喜欢，人物设计太相似了。",
+      "context": "评价作品风格，没有侮辱成员。"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>鲸声守望</title><link rel="stylesheet" href="/plugins/dafeiyu-patrol/style.css"></head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.6.3</small></strong></div>
+    <nav aria-label="主导航"><button class="nav active" data-tab="results">巡查结果<span>↗</span></button><button class="nav" data-tab="import">导入文字<span>＋</span></button><button class="nav" data-tab="settings">规则与设置<span>⚙</span></button></nav>
+    <div class="aside-note"><span class="dot"></span>本机工作台<p>发现具体言行<br>保留原文与上下文<br>看完点击已阅</p></div>
+    <a class="back" href="/">← 回到 DSH</a>
+  </aside>
+  <main>
+    <header><div><p class="eyebrow">维护讨论环境，从看清原文开始</p><h1 id="page-title">巡查结果</h1></div><a class="export" href="/plugins/dafeiyu-patrol/api/export" download>导出记录 ↓</a></header>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="tab-results">
+      <div class="stats"><div><span>未阅内容</span><strong id="count-total">0</strong></div><div><span>可疑</span><strong id="count-suspicious">0</strong></div><div><span>其它</span><strong id="count-other">0</strong></div><div><span>待模型分析</span><strong id="count-pending">0</strong></div></div>
+      <section class="scan box"><div class="section-head"><h2>发起一次巡查</h2><span id="model-current" class="muted">读取 DSH 模型配置…</span></div>
+        <label>关键词<input id="keywords" placeholder="大肥鱼，DeepSeek拟人"></label>
+        <details><summary>或指定笔记链接</summary><label>每行一个链接<textarea id="urls" rows="3" placeholder="https://www.xiaohongshu.com/explore/…"></textarea></label></details>
+        <label><input id="exclude-seen" type="checkbox" checked>排除已查过的笔记</label><p class="hint">只读取新笔记；要更新旧帖正文或新评论，请取消勾选。未读成功的笔记仍可重试。</p>
+        <div class="actions"><span id="seen-cache-count" class="muted"></span><button id="clear-seen-cache">清空已查缓存</button><button id="restore-seen-cache" hidden>撤销上次清理</button></div><p class="hint">清空后旧帖可再次查找，原文、分析和复核保留。相同文字仍复用已有分析。</p>
+        <div class="actions"><button id="start" class="primary">开始巡查 →</button><button id="login">打开采集浏览器</button><button id="analyze">分析未阅内容</button><button id="stop" class="danger" hidden>停止任务</button><button id="resume" hidden>继续任务</button></div>
+        <p id="limits" class="hint"></p><p class="hint">首次请在独立打开的 Chrome 窗口登录小红书。读取正文与可见评论；配图保存和机器识别请从 DSH 侧栏巡查面板查看。</p>
+      </section>
+      <section id="job-box" class="job box" hidden><div class="section-head"><h2 id="job-status">任务进度</h2><span id="job-counts" class="muted"></span></div><p id="job-message"></p><details><summary>查看任务日志</summary><ol id="job-log"></ol></details></section>
+      <div class="result-heading"><h2>内容记录</h2><span id="result-total" class="muted"></span></div>
+      <div class="filters" role="group" aria-label="筛选结果"><button data-filter="all" class="selected">未阅</button><button data-filter="suspicious">可疑</button><button data-filter="other">其它</button><button data-filter="unanalyzed">待模型分析</button><button data-filter="read">已阅</button></div>
+      <div id="results" aria-live="polite"></div><div id="pager" class="pager" hidden><button id="prev">← 上一页</button><span id="page-number"></span><button id="next">下一页 →</button></div>
+    </section>
+    <section id="tab-import" hidden>
+      <div class="box"><p class="eyebrow">不需要登录，也能先试判断效果</p><h2>导入一段原文</h2><p class="hint">适合粘贴笔记、评论或用示例校准规则。导入内容会发送到所选模型服务。</p>
+        <form id="import-form"><label>类型<select id="import-kind"><option value="comment">评论</option><option value="note">笔记</option></select></label><label>标题<input id="import-title" placeholder="手动导入"></label><label>原文<textarea id="import-text" rows="7" required placeholder="粘贴需要分析的原文…"></textarea></label><label>上下文<textarea id="import-context" rows="4" placeholder="上级评论、所属笔记，或说明这句话是在引用或反驳谁…"></textarea></label><label>原帖链接（可选）<input id="import-url" placeholder="小红书笔记链接"></label><div class="actions"><button class="primary" type="submit">导入并分析 →</button><button id="sample" type="button">填入一条示例</button></div></form>
+      </div>
+    </section>
+    <section id="tab-settings" hidden>
+      <form id="settings-form"><div class="box"><h2>模型与扫描范围</h2><p class="hint">默认复用 DSH 的模型和凭据。这里只选择模型，不保存 API 密钥。</p><div class="grid-two"><label>模型服务<select id="provider"><option value="">跟随 DSH 默认模型</option></select></label><label>分析模型<select id="model"><option value="">跟随默认模型</option></select></label></div><div class="grid-three"><label>每轮笔记上限<input id="maxNotes" type="number" min="1" max="30" required></label><label>每篇评论上限<input id="maxComments" type="number" min="0" max="50" required></label><label>每轮分析上限<input id="maxAnalysis" type="number" min="1" max="100" required></label></div><p class="hint">分析上限限制调用条数，每条回复最多8,192 token（思考也可能计入）。失败调用也占用额度；相同内容、规则和模型复用已保存的结果。</p></div>
+      <div class="box"><h2>判断规则</h2><p class="hint">规则用于识别具体言行。修改规则后，点击“分析未阅内容”可按新规则重新判断。</p><label class="sr-only" for="rules">判断规则</label><textarea id="rules" rows="15" required></textarea></div><div class="actions"><button class="primary" type="submit">保存设置</button></div></form>
+    </section>
+    <footer>模型建议仅供复核 · 原文可以尖锐，判断需要语境 · 数据保存在本机</footer>
+  </main>
+</div>
+<script type="module" src="/plugins/dafeiyu-patrol/app.js"></script>
+</body></html>

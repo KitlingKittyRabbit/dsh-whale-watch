@@ -8,7 +8,7 @@
 
 支持的宿主版本：**DSH Web `0.2.0-rc.2`**。本机验证环境为 Node 24、Linux、Google Chrome。其他系统和 DSH 版本尚未实机验证。
 
-1. 从 [GitHub 试用版发布页](https://github.com/KitlingKittyTiger/dsh-whale-watch/releases/tag/v0.6.3) 下载 `dsh-dafeiyu-patrol-0.6.3.tgz`。
+1. 从 [GitHub 试用版发布页](https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.6.3) 下载 `dsh-dafeiyu-patrol-0.6.3.tgz`。
 2. 在 DSH **插件 → 安装** 中填入安装包的本地绝对路径。安装后启用「鲸声守望」，按宿主提示刷新页面。升级已有版本时，先卸载旧包再安装；当前 DSH 的包替换还需要重启进程，以加载新的后端模块，巡查数据会保留。
 3. 点击左侧 **鲸声守望**，主界面显示工作台。
 4. 先在 **导入文字** 中填入示例，试用模型分析；使用 DSH 已配置的模型，不需要再填密钥。

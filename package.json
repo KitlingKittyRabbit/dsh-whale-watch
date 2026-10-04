@@ -57,10 +57,10 @@
   "icon": "./ui/icon.svg",
   "repository": {
     "type": "git",
-    "url": "https://github.com/KitlingKittyTiger/dsh-whale-watch.git"
+    "url": "https://github.com/KitlingKittyRabbit/dsh-whale-watch.git"
   },
-  "homepage": "https://github.com/KitlingKittyTiger/dsh-whale-watch#readme",
+  "homepage": "https://github.com/KitlingKittyRabbit/dsh-whale-watch#readme",
   "bugs": {
-    "url": "https://github.com/KitlingKittyTiger/dsh-whale-watch/issues"
+    "url": "https://github.com/KitlingKittyRabbit/dsh-whale-watch/issues"
   }
 }

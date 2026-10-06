@@ -7,12 +7,13 @@ import { DshModel } from './model.js';
 import { PatrolEngine } from './engine.js';
 import { createHandler, PANEL_PATH } from './http.js';
 import { AGENT_PROMPT } from './rules.js';
+import { SocialDataX } from './socialdatax.js';
 
 export const name = 'dafeiyu-patrol';
 export const inject = ['llm', 'agentDefaultModel', 'agentPresets', 'attachments'];
 export async function apply(ctx, config = {}) {
   const root = config.dataDir || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dafeiyu-patrol');
-  const engine = await new PatrolEngine(new Store(root), new XhsBrowser(root, ctx.attachments), new DshModel(ctx)).init();
+  const engine = await new PatrolEngine(new Store(root), new XhsBrowser(root, ctx.attachments), new DshModel(ctx), new SocialDataX(root, ctx.attachments)).init();
   ctx.provide('dafeiyuPatrol', engine);
   ctx.effect(() => () => engine.dispose(), 'patrol cleanup');
   ctx.inject(['webServer', 'connection'], httpCtx => {

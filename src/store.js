@@ -3,9 +3,9 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DEFAULT_RULES } from './rules.js';
 export const hash = text => createHash('sha256').update(text).digest('hex');
-export const defaultSettings = () => ({ keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
+export const defaultSettings = () => ({ collectionSource: 'browser', apiBudgetYuan: 5, discussionAnalysisLimit: 500, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
 function collectedNoteId(item) {
-  return item.kind === 'note' && item.coverage?.source === 'rendered-dom'
+  return item.kind === 'note' && (item.coverage?.source === 'rendered-dom' || item.coverage?.source === 'socialdatax' && item.discussion?.complete)
     ? item.sourceKey?.match(/^note:([a-f0-9]{24})$/i)?.[1]?.toLowerCase() : null;
 }
 
@@ -19,6 +19,8 @@ export class Store {
       this.data = { version: 1, settings: defaultSettings(), items: [], jobs: [] };
     }
     if (this.data.version !== 1 || !Array.isArray(this.data.items) || !Array.isArray(this.data.jobs)) throw new Error('巡查数据格式不受支持');
+    // Preserve the old collection mode on upgrade; switching data sources is explicit.
+    if (!this.data.settings.collectionSource) this.data.settings.collectionSource = 'browser';
     this.data.settings = { ...defaultSettings(), ...this.data.settings };
     if (!this.data.defaultsRevision) {
       if (this.data.settings.maxNotes === 5 && this.data.settings.maxComments === 10 && this.data.settings.maxAnalysis === 15) this.data.settings.maxAnalysis = 55;
@@ -63,11 +65,12 @@ export class Store {
     try { await this.save(); } catch (error) { this.data.seenCache = cache; throw error; }
     return next.ids.length;
   }
-  async upsert(record) {
+  async upsert(record, { persist = true } = {}) {
     const identity = record.sourceKey || hash(record.url + '\n' + record.kind + '\n' + record.text + '\n' + record.context);
     const id = hash(identity).slice(0, 24);
     const existing = this.data.items.find(item => item.id === id);
-    const contentHash = hash(JSON.stringify([record.kind, record.title, record.text, record.context, record.coverage, (record.images || []).map(i => [i.index, i.attachment?.attachmentId || null, i.error || null])]));
+    const contentHash = hash(JSON.stringify([record.kind, record.title, record.text, record.context, record.coverage, (record.images || []).map(i => [i.index, i.attachment?.attachmentId || null, i.error || null]), record.discussion ? { ...record.discussion, fetchedAt: undefined } : undefined,
+      record.discussionNoteId ? [record.author, record.parentCommentId, record.threadRootId] : undefined]));
     const now = new Date().toISOString();
     const noteId = collectedNoteId(record);
     if (noteId && !this.data.seenCache.ids.includes(noteId)) this.data.seenCache.ids.push(noteId);
@@ -76,9 +79,9 @@ export class Store {
         const history = [...(existing.history || []), { text: existing.text, analysis: existing.analysis, review: existing.review, images: existing.images, vision: existing.vision, readAt: existing.readAt, at: now }].slice(-5);
         Object.assign(existing, record, { contentHash, analysis: null, analysisKey: null, analysisError: null, review: { verdict: 'pending', note: '' }, history, vision: null, readAt: null });
       }
-      existing.lastSeenAt = now; if (record.images) existing.images = record.images; existing.url = record.url; await this.save(); return existing;
+      existing.lastSeenAt = now; if (record.images) existing.images = record.images; existing.url = record.url; if (persist) await this.save(); return existing;
     }
     const item = { ...record, id, contentHash, capturedAt: now, lastSeenAt: now, analysis: null, readAt: null, review: { verdict: 'pending', note: '' } };
-    this.data.items.unshift(item); await this.save(); return item;
+    this.data.items.unshift(item); if (persist) await this.save(); return item;
   }
 }

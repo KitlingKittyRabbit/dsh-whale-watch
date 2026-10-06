@@ -63,6 +63,7 @@ export function createHandler(engine) {
         if (route === '/api/background/start') return send(res, 200, await engine.startBackground(data));
         if (route === '/api/background/update') return send(res, 200, await engine.updateBackground(data));
         if (route === '/api/settings') return send(res, 200, await engine.settings(data));
+        if (route === '/api/data-key') return send(res, 200, await engine.dataKey(data));
         if (route === '/api/login') { if (engine.active) throw new Error('任务进行中，请先停止或在现有采集窗口处理登录'); return send(res, 200, await engine.browser.login()); }
         if (route === '/api/source') { if (engine.active) throw new Error('请等当前任务结束后再打开原帖'); return send(res, 200, await engine.browser.openNote(data.url)); }
         if (route === '/api/start') return send(res, 200, await engine.start(data));

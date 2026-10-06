@@ -7,17 +7,19 @@ import { hash } from './store.js';
 import { backgroundStartSchema, backgroundUpdateSchema, readingMaterial, backgroundHash, activeBackground, publicProfile, backgroundReadingKey, parseReading } from './background.js';
 
 import { communityBackgroundInfo, createCommunityBackground } from './community-background.js';
+import { discussionRecords, discussionHash, DISCUSSION_BATCH_SIZE } from './discussion.js';
 
 export class PatrolEngine {
-  constructor(store, browser, model) { this.store = store; this.browser = browser; this.model = model; this.active = null; }
-  async init() { await this.store.init(); return this; }
-  isStale(item) { return !!item.analysis && !!this.model.cacheKey && item.analysisKey !== this.model.cacheKey(item, this.analysisSettings(this.store.data.settings)); }
+  constructor(store, browser, model, apiCollector = null) { this.store = store; this.browser = browser; this.model = model; this.apiCollector = apiCollector; this.active = null; }
+  async init() { await this.store.init(); await this.apiCollector?.init(); return this; }
+  itemOptions(item, options) { const records = discussionRecords(item, this.store.data.items); return records ? { ...options, discussionHash: discussionHash(records) } : options; }
+  isStale(item) { return !!item.analysis && !!this.model.cacheKey && item.analysisKey !== this.model.cacheKey(item, this.itemOptions(item, this.analysisSettings(this.store.data.settings))); }
   analysisSettings(settings) { return { ...settings, backgroundContext: activeBackground(this.store.data) }; }
   state() {
     const data = this.store.data;
     const unread = data.items.filter(i => !i.readAt);
     const classified = unread.filter(i => i.analysis && !this.isStale(i));
-    return { settings: data.settings, jobs: data.jobs.slice(-20).reverse(), counts: {
+    return { settings: data.settings, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: data.items.length, unread: unread.length, read: data.items.length - unread.length, review: classified.filter(i => i.analysis.decision === 'review').length,
       suspicious: classified.filter(i => i.analysis.decision === 'review').length,
       other: classified.filter(i => i.analysis.decision !== 'review').length,
@@ -46,6 +48,21 @@ export class PatrolEngine {
   async settings(input) {
     if (this.active) throw new Error('任务进行中，请先停止任务再修改设置');
     this.store.data.settings = settingsSchema.parse(input); await this.store.save(); return this.state();
+  }
+  async dataKey(input) {
+    if (this.active) throw new Error('任务进行中，请先停止任务再修改数据服务密钥');
+    if (!this.apiCollector) throw new Error('当前宿主未启用数据服务');
+    if (typeof input.apiKey !== 'string') throw new Error('请输入数据服务 API Key');
+    await this.apiCollector.setKey(input.apiKey);
+    return { message: input.apiKey.trim() ? '数据服务密钥已保存在本机；未发起付费调用。' : '数据服务密钥已清除。', configured: this.apiCollector.hasKey };
+  }
+  async *collectRecords(options, signal, progress) {
+    if (options.collectionSource !== 'socialdatax') { yield* this.browser.collect(options, signal, progress); return; }
+    if (!this.apiCollector) throw new Error('当前宿主未启用数据服务');
+    for await (const bundle of this.apiCollector.collect(options, signal, progress)) {
+      // Save comments before committing the note's complete snapshot and seen-cache entry.
+      for (const comment of bundle.comments) yield comment; yield bundle.note;
+    }
   }
   async retry(input) {
     const { id, backgroundExpanded } = readSchema.parse(input);
@@ -77,8 +94,9 @@ export class PatrolEngine {
   async start(input = {}, mode = 'scan', backgroundPlan = null) {
     if (this.active) throw new Error('已有任务运行中，请先停止或等待完成');
     const options = this.analysisSettings(this.options(input));
+    if ((mode === 'scan' || mode === 'background' && backgroundPlan?.source !== 'existing') && options.collectionSource === 'socialdatax' && !this.apiCollector?.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key');
     const job = { id: randomUUID(), mode, status: 'running', startedAt: new Date().toISOString(),
-      options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
+      options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
     this.store.data.jobs.push(job);
     this.store.data.jobs = this.store.data.jobs.slice(-100);
     const controller = new AbortController();
@@ -98,11 +116,14 @@ export class PatrolEngine {
       if (event.type === 'attempt') job.notesAttempted++;
       if (event.type === 'excluded') job.notesExcluded += event.count;
       if (event.type === 'skip') job.skippedNotes.push({ url: event.url, code: event.code, reason: event.reason });
+      if (event.type === 'api') { job.apiRequests = event.attempts; job.apiCostCents = event.costCents; job.apiUnconfirmed = event.unknown; }
+      if (event.type === 'api-stop') job.apiStopReason = event.message;
       job.message = message; job.messages.push({ at: new Date().toISOString(), message }); job.messages = job.messages.slice(-100); };
     let analysisUsed = 0, visionUsed = 0;
+    const analysisCap = options.collectionSource === 'socialdatax' ? options.discussionAnalysisLimit : options.maxAnalysis;
     const preparedNotes = new Set();
     const prepareImages = async item => {
-      if (item.kind !== 'note' || !item.coverage?.imageCount || preparedNotes.has(item.id)) return;
+      if (!item.coverage?.imageCount || preparedNotes.has(item.id)) return;
       preparedNotes.add(item.id);
       if (!options.analyze || !options.readImages) return;
       const key = this.model.visionKey?.(item, options);
@@ -156,6 +177,46 @@ export class PatrolEngine {
       }
       await this.store.save();
     };
+    const processedDiscussions = new Set();
+    const processDiscussion = async (item, onlyId = null) => {
+      const records = discussionRecords(item, this.store.data.items);
+      if (!records) return process(item);
+      const note = records[0];
+      if (processedDiscussions.has(note.id)) return; processedDiscussions.add(note.id);
+      if (!options.analyze) return;
+      if (!this.model.analyzeDiscussion) throw new Error('当前模型适配器不支持整篇讨论分析');
+      const candidates = records.filter(i => onlyId ? i.id === onlyId : !i.readAt);
+      if (!candidates.length || analysisUsed >= analysisCap) return;
+      const contextCoverage = () => { for (const comment of records.slice(1)) {
+        comment.coverage = { ...comment.coverage, contextImagesUnread: !!note.coverage?.imageCount && !note.vision?.complete,
+          contextMediaUnread: !!note.coverage?.unsupportedMedia };
+      } };
+      contextCoverage();
+      const beforeImages = { ...options, discussionHash: discussionHash(records) };
+      if (!onlyId && candidates.every(i => i.analysis && !i.analysisError && i.analysisKey === this.model.cacheKey(i, beforeImages))) { job.cached += candidates.length; return; }
+      for (const record of records) await prepareImages(record);
+      contextCoverage();
+      const settings = { ...options, discussionHash: discussionHash(records) };
+      const pending = candidates.filter(i => {
+        if (options.backgroundExpanded !== undefined) i.backgroundExpanded = options.backgroundExpanded;
+        if (!onlyId && i.analysis && !i.analysisError && i.analysisKey === this.model.cacheKey(i, settings)) { job.cached++; return false; }
+        return true;
+      }).slice(0, Math.max(0, analysisCap - analysisUsed));
+      for (let n = 0; n < pending.length; n += DISCUSSION_BATCH_SIZE) {
+        signal.throwIfAborted(); const targets = pending.slice(n, n + DISCUSSION_BATCH_SIZE); analysisUsed += targets.length;
+        progress(`结合“${note.title}”及${records.length - 1}条已保存评论分析，本批${targets.length}条`);
+        let results;
+        try { results = await this.model.analyzeDiscussion(records, targets, settings, signal, { onVerification: () => job.verificationCalls++, onDiscussionCall: () => job.discussionCalls++ }); }
+        catch (error) { if (signal.aborted) throw error; results = targets.map(i => ({ id: i.id, error: error.message })); }
+        for (const target of targets) {
+          const row = results.find(r => r.id === target.id);
+          if (target.analysis) target.history = [...(target.history || []), { text: target.text, analysis: target.analysis, review: target.review, images: target.images, vision: target.vision, readAt: target.readAt, at: new Date().toISOString(), reason: '结合整篇讨论重新分析' }].slice(-5);
+          if (row?.analysis) { target.analysis = row.analysis; target.analysisKey = this.model.cacheKey(target, settings); target.analysisError = null; job.analyzed++; }
+          else { target.analysis = null; target.analysisKey = null; target.analysisError = row?.error || '整篇讨论分析遗漏本条'; job.failed++; }
+        }
+        await this.store.save();
+      }
+    };
     try {
       if (mode === 'background') {
         await this.runBackground(job, options, signal, progress, prepareImages);
@@ -186,9 +247,15 @@ export class PatrolEngine {
         }
       } else if (mode === 'scan') {
         const excludedNoteIds = options.excludeSeen ? [...this.store.data.seenCache.ids] : [];
-        for await (const record of this.browser.collect({ ...options, excludedNoteIds }, signal, progress)) {
-          job.collected++; if (record.kind === 'note') job.notesRead++; const item = await this.store.upsert(record); await process(item); await this.store.save();
+        const notes = [];
+        for await (const record of this.collectRecords({ ...options, excludedNoteIds }, signal, progress)) {
+          job.collected++; if (record.kind === 'note') { job.notesRead++; if (record.discussion && !record.discussion.complete) job.discussionGaps.push({ title: record.title, limitations: record.discussion.limitations }); }
+          const item = await this.store.upsert(record, { persist: options.collectionSource !== 'socialdatax' });
+          if (record.discussion && record.kind === 'note') notes.push(item);
+          if (options.collectionSource !== 'socialdatax') await process(item);
+          if (options.collectionSource !== 'socialdatax' || record.kind === 'note' || job.collected % 20 === 0) await this.store.save();
         }
+        for (const note of notes) await processDiscussion(note);
         if (job.collected === 0 && job.notesExcluded > 0 && job.skippedNotes.length === 0) {
           job.status = 'completed'; progress(`本次搜索范围内没有发现新笔记，已排除 ${job.notesExcluded} 篇查过的笔记。可换关键词，或取消“排除已查过的笔记”重新检查正文及新评论。`); return;
         }
@@ -196,9 +263,9 @@ export class PatrolEngine {
       } else {
         const candidates = mode.startsWith('item:') ? this.store.data.items.filter(i => i.id === mode.slice(5)) : [...this.store.data.items];
         candidates.sort((a, b) => (a.kind === 'note' ? 0 : 1) - (b.kind === 'note' ? 0 : 1));
-        for (const item of candidates) { if (analysisUsed >= options.maxAnalysis) break; await process(item); }
+        for (const item of candidates) { if (analysisUsed >= analysisCap) break; if (item.discussionNoteId) await processDiscussion(item, mode.startsWith('item:') ? item.id : null); else await process(item); }
       }
-      job.status = job.skippedNotes.length || job.failed || job.imagesMissing ? 'partial' : 'completed';
+      job.status = job.skippedNotes.length || job.failed || job.imagesMissing || job.discussionGaps.length || job.apiStopReason ? 'partial' : 'completed';
       const coverage = mode === 'scan' ? `排除已查 ${job.notesExcluded} 篇；检查 ${job.notesAttempted} 篇，读到 ${job.notesRead} 篇，${job.skippedNotes.length} 篇未读取。` : '';
       progress(`${job.status === 'partial' ? '部分完成' : '完成'}：${coverage}采集 ${job.collected} 条，分析 ${job.analyzed} 条，复用 ${job.cached} 条，失败 ${job.failed} 条；疑似问题证据核对 ${job.verificationCalls} 次；配图读取 ${job.visionRead} 篇、复用 ${job.visionCached} 篇、失败 ${job.visionFailed} 篇、不完整 ${job.imagesMissing} 篇。`);
     } catch (error) {
@@ -261,7 +328,7 @@ export class PatrolEngine {
     const notes = new Map(); const refreshedKeys = new Set();
     if (plan.source === 'existing') for (const id of plan.ids) { const note = this.store.data.items.find(i => i.id === id); notes.set(note.sourceKey || note.id, note); }
     if (plan.source !== 'existing' || plan.refreshSources && plan.urls.length) {
-      for await (const record of this.browser.collect({ ...options, excludedNoteIds: [] }, signal, progress)) {
+      for await (const record of this.collectRecords({ ...options, excludedNoteIds: [] }, signal, progress)) {
         job.collected++; const item = await this.store.upsert(record);
         if (item.kind === 'note') { job.notesRead++; notes.set(item.sourceKey || item.id, item); refreshedKeys.add(item.sourceKey || item.id); }
         await this.store.save();
@@ -316,8 +383,8 @@ export class PatrolEngine {
     const job = jobId ? this.store.data.jobs.find(j => j.id === jobId) : this.store.data.jobs.at(-1);
     if (!job || !['paused', 'cancelled', 'interrupted'].includes(job.status)) throw new Error('没有可继续的已停止或暂停任务');
     if (job.mode === 'evaluate') throw new Error('评估任务请到“示例评估”重新运行');
-    const { keywords, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded } = job.options;
-    const options = { ...(urls?.length ? { urls } : keywords?.length ? { keywords } : {}), maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded };
+    const { keywords, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit } = job.options;
+    const options = { ...(urls?.length ? { urls } : keywords?.length ? { keywords } : {}), maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit };
     // Stopped scans may already have saved records that their seen-note cache would skip.
     const mode = job.mode === 'scan' && job.status !== 'paused' && analyze && this.state().counts.pending > 0 ? 'analyze' : job.mode;
     const result = await this.start(options, mode, job.backgroundPlan);

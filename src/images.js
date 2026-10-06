@@ -54,7 +54,7 @@ export function imageContext(item, limit = 18000) {
   return `配图共${item.coverage.imageCount}张；读取${item.vision?.pages?.length || 0}张；${item.vision?.complete ? '本次已读取所保存的全部配图' : '配图信息不完整'}。${item.vision?.error || ''}\n${recognized}`.slice(0, limit);
 }
 export function analysisMaterial(item) {
-  const ownImageText = item.kind === 'note' ? (item.vision?.pages || []).map(p => `【配图${p.index}机器识别文字，需人工核对】\n${p.text}`).join('\n\n') : '';
+  const ownImageText = item.kind === 'note' || item.coverage?.imageCount > 0 ? (item.vision?.pages || []).map(p => `【配图${p.index}机器识别文字，需人工核对】\n${p.text}`).join('\n\n') : '';
   return { ...item, text: [item.text, ownImageText].filter(Boolean).join('\n\n'),
     coverage: { ...item.coverage, imagesUnread: item.coverage?.imageCount > 0 ? !item.vision?.complete : item.coverage?.imagesUnread },
   };

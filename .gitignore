@@ -10,3 +10,4 @@ artifacts/
 *.key
 .DS_Store
 coverage/
+**/socialdatax-key.json*

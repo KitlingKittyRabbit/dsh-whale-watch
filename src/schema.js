@@ -2,6 +2,9 @@ import { z } from 'zod';
 import { CATEGORIES, canonicalCategory } from './rules.js';
 
 export const settingsSchema = z.object({
+  collectionSource: z.enum(['browser', 'socialdatax']).default('browser'),
+  apiBudgetYuan: z.number().min(0.1).max(100).default(5),
+  discussionAnalysisLimit: z.number().int().min(1).max(2001).default(500),
   keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(5),
   provider: z.string().trim().max(100), model: z.string().trim().max(150),
   maxNotes: z.number().int().min(1).max(30),
@@ -14,7 +17,10 @@ export const settingsSchema = z.object({
   rules: z.string().trim().min(20).max(12000),
 });
 export const startSchema = z.object({
-  keywords: settingsSchema.shape.keywords.optional(),
+  collectionSource: settingsSchema.shape.collectionSource.unwrap().optional(),
+  apiBudgetYuan: settingsSchema.shape.apiBudgetYuan.unwrap().optional(),
+  discussionAnalysisLimit: settingsSchema.shape.discussionAnalysisLimit.unwrap().optional(),
+  keywords: z.array(z.string().trim().min(1).max(80)).max(5).optional(),
   urls: z.array(z.string().max(2000)).max(30).optional(),
   maxNotes: settingsSchema.shape.maxNotes.optional(),
   maxComments: settingsSchema.shape.maxComments.optional(),
@@ -76,7 +82,7 @@ export function parseAnalysis(output, item) {
   if (result.targetQuote && !ownText.includes(result.targetQuote)) throw new Error('模型分析对象引文不属于本条原文，结果未采纳');
   if (result.findings?.some(f => !ownText.includes(f.quote) || !result.categories.includes(f.category))) throw new Error('模型问题依据与本条原文或类别不符，结果未采纳');
   if (result.evidence.some(quote => !ownText.includes(quote))) throw new Error('模型引文与原文不符，结果未采纳');
-  if (result.imageEvidence.some(e => item.kind !== 'note' || !item.images?.some(i => i.index === e.index && i.attachment) || !item.vision?.pages?.some(p => p.index === e.index))) throw new Error('图像依据没有对应的已读取配图，结果未采纳');
+  if (result.imageEvidence.some(e => !item.coverage?.imageCount || !item.images?.some(i => i.index === e.index && i.attachment) || !item.vision?.pages?.some(p => p.index === e.index))) throw new Error('图像依据没有对应的已读取配图，结果未采纳');
   const uncertainImages = result.imageEvidence.filter(e => item.vision?.pages?.find(p => p.index === e.index)?.uncertain);
   if (uncertainImages.length) {
     result.imageEvidence = result.imageEvidence.map(e => ({ ...e, uncertain: uncertainImages.includes(e) }));
@@ -84,10 +90,10 @@ export function parseAnalysis(output, item) {
     if (result.decision === 'review' && result.evidence.length === 0) { result.decision = 'uncertain'; result.categories = [...new Set([...result.categories, '信息不足'])]; }
   }
   if (result.decision === 'review' && result.evidence.length === 0 && result.imageEvidence.length === 0) throw new Error('模型建议复核却没有原文依据，结果未采纳');
-  const missingOwnContent = !!(item.coverage?.imagesUnread || item.coverage?.textTruncated);
-  const missingBackground = !!(item.coverage?.parentMissing || item.coverage?.contextImagesUnread || item.coverage?.contextTextTruncated);
+  const missingOwnContent = !!(item.coverage?.imagesUnread || item.coverage?.textTruncated || item.coverage?.unsupportedMedia);
+  const missingBackground = !!(item.coverage?.parentMissing || item.coverage?.contextImagesUnread || item.coverage?.contextMediaUnread || item.coverage?.contextTextTruncated || item.coverage?.discussionIncomplete);
   if (missingOwnContent || missingBackground) {
-    const limitation = missingOwnContent ? '本条自身的配图或后文未完整读取，结论仅覆盖已读取内容。' : '所属笔记文字/配图或上级评论未完整读取；这不自动表示本评论有问题。';
+    const limitation = missingOwnContent ? '本条自身的图片、后文或视频/语音未完整读取，结论仅覆盖已读取内容。' : '所属笔记、上级回复或评论区存在读取缺口；这不自动表示本评论有问题。';
     result.uncertainties = [...new Set([...result.uncertainties, limitation])];
     if (result.decision === 'normal' && (missingOwnContent || (missingBackground && result.missingContextAffectsDecision))) {
       result.decision = 'uncertain';

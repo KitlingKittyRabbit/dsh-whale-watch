@@ -5,17 +5,20 @@ export function apply(ctx) {
   const engine = ctx.dafeiyuPatrol;
   const output = { schema: { type: 'json' }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] };
   const tool = (name, description, parameters, execute) => ctx.effect(() => ctx.tools.register(defineTool({ name, description, parameters, output, execute })), `patrol tool ${name}`);
-  tool('patrol_start', '发起小红书关键词搜索或指定笔记的采集与分析，立即返回后台任务编号。默认每轮5篇、每篇10条可见评论、最多分析55条。默认排除历史已采集笔记，登录或验证时会暂停。', {
+  tool('patrol_start', '发起关键词搜索或指定笔记采集，立即返回任务编号。SocialDataX方式分页读取整篇正文、配图、评论和回复，受本轮数据费用上限限制，再结合完整已保存讨论分析。浏览器方式保留原有5/10/55限额。不得自动改数据来源、提高费用或回退浏览器。', {
+    collectionSource: { type: 'string', enum: ['browser', 'socialdatax'], description: '使用面板配置；只有用户明确要求才更改' },
+    apiBudgetYuan: { type: 'number', description: '本轮数据费用上限（元），默认使用配置；仅用户明确要求才提高' },
+    discussionAnalysisLimit: { type: 'integer', description: 'API材料本轮分析内容上限，默认500；模型另收费' },
     keywords: { type: 'array', items: { type: 'string' }, description: '搜索词，不传时使用面板配置' },
     urls: { type: 'array', items: { type: 'string' }, description: '小红书笔记链接；提供时默认只采集这些链接' },
     excludeSeen: { type: 'boolean', description: '默认true，跳过历史成功采集的笔记；false可更新正文和新评论' },
     analyze: { type: 'boolean', description: 'false只采集、不调用模型；默认true' },
     maxNotes: { type: 'integer', description: '1到30，整轮总篇数' },
-    maxComments: { type: 'integer', description: '0到50，每篇最多读取的可见评论数' },
+    maxComments: { type: 'integer', description: '浏览器方式0到50，每篇最多读取的可见评论数；API方式自动分页' },
     readImages: { type: 'boolean', description: '分析时读取配图，默认启用；仅采集不调用模型' },
-    maxVision: { type: 'integer', description: '1到30，每轮看图笔记上限' },
+    maxVision: { type: 'integer', description: '1到30，每轮看图内容上限，带图评论也占名额' },
     maxImagesPerNote: { type: 'integer', description: '1到18，每篇配图上限' },
-    maxAnalysis: { type: 'integer', description: '1到100，每轮模型分析条数上限' },
+    maxAnalysis: { type: 'integer', description: '浏览器方式1到100，每轮模型分析条数上限' },
   }, async args => engine.start(args));
   tool('patrol_background', '查看当前背景笔记、已读材料和阅读进度。背景文章的说法不是已证实事实。', {}, async () => engine.background());
   tool('patrol_background_start', '用户要求先了解环境或阅读背景时，阅读已采集文章或指定链接，读取配图后整理带来源的背景笔记；此阶段不分类内容。', { source: { type: 'string', enum: ['existing', 'urls', 'search'] }, count: { type: 'integer', description: '1到20篇，默认10' }, ids: { type: 'array', items: { type: 'string' }, description: '已采集笔记ID' }, urls: { type: 'array', items: { type: 'string' } }, keywords: { type: 'array', items: { type: 'string' } }, refreshSources: { type: 'boolean', description: '默认true，重新获取已采集原帖及配图' } }, async args => engine.startBackground(args));

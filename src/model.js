@@ -6,6 +6,7 @@ import { analysisMaterial, imageContext, parseImageReading, IMAGE_PROMPT } from 
 import { z } from 'zod';
 import { backgroundInput, synthesisInput, parseReading, parseMemo, READING_PROMPT, MEMO_PROMPT } from './background.js';
 import { randomUUID } from 'node:crypto';
+import { DISCUSSION_PROMPT, discussionInput, discussionHash } from './discussion.js';
 
 export class DshModel {
   constructor(ctx) { this.ctx = ctx; this.sessionId = randomUUID(); }
@@ -22,7 +23,7 @@ export class DshModel {
     }));
     return { current, providers: models, mode: 'dsh' };
   }
-  cacheKey(item, settings) { const key = [item.contentHash, item.context, item.vision, item.coverage, settings.rules, this.selection(settings), 'prompt-v6-group-respect']; if (settings.backgroundContext) key.push(settings.backgroundContext.hash, !!item.backgroundExpanded); return hash(JSON.stringify(key)); }
+  cacheKey(item, settings) { const key = [item.contentHash, item.context, item.vision, item.coverage, settings.rules, this.selection(settings), 'prompt-v6-group-respect']; if (settings.backgroundContext) key.push(settings.backgroundContext.hash, !!item.backgroundExpanded); if (settings.discussionHash) key.push(settings.discussionHash, 'discussion-v1'); return hash(JSON.stringify(key)); }
   visionSelection(settings) {
     return settings.visionProvider ? { provider: settings.visionProvider, model: settings.visionModel } : this.selection(settings);
   }
@@ -86,6 +87,44 @@ export class DshModel {
       throw new Error(`模型未正常完成：${assembler.finish.kind}${detail ? '（' + detail + '）' : ''}，请检查模型配置或重试`);
     }
     const output = assembler.blocks().filter(block => block.type === 'text').map(block => block.text).join('');
+    return this.finishAnalysis(item, settings, combined, { output, input, route, usage: assembler.usage }, { onVerification });
+  }
+  async analyzeDiscussion(records, targets, settings, signal, callbacks = {}) {
+    const route = this.selection(settings);
+    const discussion = discussionInput(records, targets);
+    const environment = backgroundInput(records[0], settings.backgroundContext, targets.some(i => i.backgroundExpanded));
+    const materials = targets.map(item => analysisMaterial(item));
+    const input = JSON.stringify({ discussion, background: { environment }, targets: materials.map(i => ({ id: i.id, kind: i.kind })) });
+    const combined = AbortSignal.any([signal, AbortSignal.timeout(120000)]), assembler = new BlockAssembler();
+    callbacks.onDiscussionCall?.();
+    for await (const chunk of this.ctx.llm.stream({ ...route, system: systemPrompt(settings.rules) + '\n' + DISCUSSION_PROMPT,
+      messages: [createUserMessage({ content: [{ type: 'text', text: input }], source: { kind: 'whale-watch-discussion-analysis' } })],
+      maxTokens: 16384, signal: combined, sessionId: this.sessionId })) { combined.throwIfAborted(); assembler.push(chunk); }
+    combined.throwIfAborted();
+    if (assembler.finish.kind !== 'stop') throw new Error(`整篇讨论分析未正常完成：${assembler.finish.kind}，本批结论未采纳`);
+    const text = assembler.blocks().filter(b => b.type === 'text').map(b => b.text).join('').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    const parsed = z.object({ results: z.array(z.object({ id: z.string(), analysis: z.unknown() })).max(10) }).parse(JSON.parse(text));
+    const wanted = new Set(targets.map(i => i.id)), seen = new Set();
+    for (const row of parsed.results) { if (!wanted.has(row.id) || seen.has(row.id)) throw new Error('整篇讨论分析返回未知或重复目标，结果未采纳'); seen.add(row.id); }
+    if (seen.size !== wanted.size) throw new Error('整篇讨论分析遗漏目标，结果未采纳');
+    const rows = [];
+    for (const item of targets) {
+      signal.throwIfAborted(); const row = parsed.results.find(r => r.id === item.id);
+      const target = analysisMaterial(item);
+      const ownInput = JSON.stringify({ target: { kind: target.kind, text: target.text, title: target.title, images: imageContext(item) },
+        background: { environment, discussion }, coverage: target.coverage });
+      try {
+        const checkSignal = AbortSignal.any([signal, AbortSignal.timeout(90000)]);
+        const analysis = await this.finishAnalysis(item, settings, checkSignal, { output: JSON.stringify(row.analysis), input: ownInput, route, usage: null }, callbacks);
+        analysis.discussionUsed = { noteId: records[0].id, commentsRead: records.length - 1, contextScope: discussion.contextScope,
+          omittedComments: discussion.omittedComments || 0, complete: !!records[0].discussion?.complete, hash: discussionHash(records) };
+        rows.push({ id: item.id, analysis });
+      } catch (error) { if (signal.aborted) throw error; rows.push({ id: item.id, error: error.message }); }
+    }
+    return rows;
+  }
+  async finishAnalysis(item, settings, combined, { output, input, route, usage }, { onVerification } = {}) {
+    const material = analysisMaterial(item);
     let result = parseAnalysis(output, material);
     if (!result.interpretation?.trim() || (material.text.trim() && !result.targetQuote?.trim())) throw new Error('模型未解释本条内容或未引用本条原文，结果未采纳');
     if (result.decision === 'review' && !result.findings?.length && !result.imageEvidence.length) throw new Error('模型没有给出具体问题对象和行为，结果未采纳');
@@ -117,6 +156,6 @@ export class DshModel {
       result.verification = { ...verified, proposedCategories: proposed.categories, proposedReason: proposed.reason, proposedFindings: proposed.findings, route, usage: check.usage || null };
     }
     const evidenceSources = result.evidence.map(quote => item.text.includes(quote) ? '正文' : item.kind === 'note' && item.title?.includes(quote) ? '标题' : `配图${item.vision?.pages?.find(p => p.text.includes(quote))?.index || '?'}机器识别文字，须核对原图`);
-    return { ...result, evidenceSources, backgroundUsed: settings.backgroundContext ? { id: settings.backgroundContext.id, hash: settings.backgroundContext.hash, articlesRead: settings.backgroundContext.readings.length, sourceRefs: JSON.parse(input).background.environment.references.map(r => r.ref), expanded: !!item.backgroundExpanded } : null, policyVersion: 'community-environment-v6', route, analyzedAt: new Date().toISOString(), usage: assembler.usage || null };
+    return { ...result, evidenceSources, backgroundUsed: settings.backgroundContext ? { id: settings.backgroundContext.id, hash: settings.backgroundContext.hash, articlesRead: settings.backgroundContext.readings.length, sourceRefs: JSON.parse(input).background.environment.references.map(r => r.ref), expanded: !!item.backgroundExpanded } : null, policyVersion: 'community-environment-v6', route, analyzedAt: new Date().toISOString(), usage: usage || null };
   }
 }

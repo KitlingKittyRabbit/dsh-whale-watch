@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DEFAULT_RULES } from './rules.js';
 export const hash = text => createHash('sha256').update(text).digest('hex');
-export const defaultSettings = () => ({ collectionSource: 'browser', apiBudgetYuan: 5, discussionAnalysisLimit: 500, discussionNoteLimit: 5, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
+export const defaultSettings = () => ({ collectionSource: 'socialdatax', apiBudgetYuan: 5, discussionAnalysisLimit: 500, discussionNoteLimit: 5, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
 function collectedNoteId(item) {
   return item.kind === 'note' && (item.coverage?.source === 'rendered-dom' || item.coverage?.source === 'socialdatax' && item.discussion?.complete)
     ? item.sourceKey?.match(/^note:([a-f0-9]{24})$/i)?.[1]?.toLowerCase() : null;
@@ -19,8 +19,8 @@ export class Store {
       this.data = { version: 1, settings: defaultSettings(), items: [], jobs: [] };
     }
     if (this.data.version !== 1 || !Array.isArray(this.data.items) || !Array.isArray(this.data.jobs)) throw new Error('巡查数据格式不受支持');
-    // Preserve the old collection mode on upgrade; switching data sources is explicit.
-    if (!this.data.settings.collectionSource) this.data.settings.collectionSource = 'browser';
+    // Browser automation is disabled by product policy until risk controls are resolved.
+    this.data.settings.collectionSource = 'socialdatax';
     this.data.settings = { ...defaultSettings(), ...this.data.settings };
     if (!this.data.defaultsRevision) {
       if (this.data.settings.maxNotes === 5 && this.data.settings.maxComments === 10 && this.data.settings.maxAnalysis === 15) this.data.settings.maxAnalysis = 55;
@@ -64,6 +64,34 @@ export class Store {
     this.data.seenCache = next;
     try { await this.save(); } catch (error) { this.data.seenCache = cache; throw error; }
     return next.ids.length;
+  }
+  async clearCollection() {
+    const data = this.data;
+    const isCollectionJob = j => j.mode === 'scan' || j.mode === 'analyze' || j.mode?.startsWith('item:');
+    const jobs = data.jobs.filter(isCollectionJob), count = data.items.length;
+    if (!count && !jobs.length && !data.seenCache.ids.length) return { count: 0, changed: false };
+    const previous = { items: data.items, jobs: data.jobs, seenCache: data.seenCache, collectionTrash: data.collectionTrash };
+    data.collectionTrash = { items: data.items, jobs, seenCache: data.seenCache, clearedAt: new Date().toISOString() };
+    data.items = []; data.jobs = data.jobs.filter(j => !isCollectionJob(j));
+    data.seenCache = { ids: [], clearedAt: data.collectionTrash.clearedAt, previousIds: null };
+    try { await this.save(); } catch (error) { Object.assign(data, previous); throw error; }
+    return { count, changed: true };
+  }
+  async restoreCollection() {
+    const data = this.data, trash = data.collectionTrash;
+    if (!trash) throw new Error('没有可撤销的采集记录清空');
+    if (!Array.isArray(trash.items) || !Array.isArray(trash.jobs) || !Array.isArray(trash.seenCache?.ids)) throw new Error('采集记录备份格式不受支持，未覆盖现有数据');
+    const previous = { items: data.items, jobs: data.jobs, seenCache: data.seenCache, collectionTrash: trash };
+    // New captures win by ID. Restoring must not discard newer text or analysis.
+    const ids = new Set(data.items.map(i => i.id)), restored = trash.items.filter(i => !ids.has(i.id));
+    data.items = [...data.items, ...restored];
+    const jobIds = new Set(data.jobs.map(j => j.id));
+    data.jobs = [...data.jobs, ...trash.jobs.filter(j => !jobIds.has(j.id))].sort((a, b) => (a.startedAt || '').localeCompare(b.startedAt || '')).slice(-100);
+    data.seenCache = { ...data.seenCache, ids: [...new Set([...data.seenCache.ids, ...trash.seenCache.ids])],
+      previousIds: data.seenCache.previousIds ?? trash.seenCache.previousIds ?? null };
+    data.collectionTrash = null;
+    try { await this.save(); } catch (error) { Object.assign(data, previous); throw error; }
+    return restored.length;
   }
   async upsert(record, { persist = true } = {}) {
     const identity = record.sourceKey || hash(record.url + '\n' + record.kind + '\n' + record.text + '\n' + record.context);

@@ -45,10 +45,12 @@ async function refresh() {
   }
   $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 每篇 ${s.maxComments} 条可见评论 · ${s.discussionNoteLimit} 篇整篇分析。结果按当前搜索排序读取。`;
   const running = !!state.activeJob;
+  $('clear-collection').disabled = running || !state.collection?.canClear;
+  $('restore-collection').hidden = !state.collection?.canRestore; $('restore-collection').disabled = running;
   $('seen-cache-count').textContent = `已查缓存：${state.seenCache?.count || 0} 篇`;
   $('clear-seen-cache').disabled = running || !state.seenCache?.count;
   $('restore-seen-cache').hidden = !state.seenCache?.canRestore; $('restore-seen-cache').disabled = running;
-  for (const id of ['start', 'login', 'analyze']) $(id).disabled = running;
+  for (const id of ['start', 'analyze']) $(id).disabled = running;
   $('stop').hidden = !running;
   const job = state.jobs[0];
   $('job-box').hidden = !job;
@@ -91,8 +93,8 @@ function card(item, embedded = false) {
   head.append(info, el('span', analysis ? names[analysis.decision] : '未做模型分析', 'badge')); card.append(head);
   card.append(el('div', item.text || '没有读取到文字；这可能是一篇图片笔记。', 'raw'));
   if (item.url) {
-    const open = el('button', '在采集浏览器查看'); open.addEventListener('click', () => action(open, '/source', { url: item.url })); card.append(open);
-    const source = el('a', '用当前浏览器打开 ↗'); source.href = item.url; source.target = '_blank'; source.rel = 'noopener noreferrer'; card.append(source);
+
+    const source = el('a', '手动打开原帖 ↗'); source.href = item.url; source.target = '_blank'; source.rel = 'noopener noreferrer'; card.append(source);
   }
   if (analysis) {
     const details = el('div', undefined, 'assessment');
@@ -132,7 +134,7 @@ async function action(button, path, data = {}) {
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => { tab(button.dataset.tab); if (activeTab === 'results') refreshResults(true).catch(e => notice(e.message, true)); }));
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { filter = button.dataset.filter; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b === button)); refreshResults(true).catch(e => notice(e.message, true)); }));
 $('start').addEventListener('click', () => { const urls = $('urls').value.split('\n').map(s => s.trim()).filter(Boolean); action($('start'), '/start', { ...(urls.length ? { urls } : { keywords: split($('keywords').value) }), excludeSeen: $('exclude-seen').checked }); });
-for (const id of ['login', 'analyze', 'stop', 'resume']) $(id).addEventListener('click', () => action($(id), '/' + id));
+for (const id of ['analyze', 'stop', 'resume']) $(id).addEventListener('click', () => action($(id), '/' + id));
 $('clear-seen-cache').addEventListener('click', () => action($('clear-seen-cache'), '/cache/clear'));
 $('restore-seen-cache').addEventListener('click', () => action($('restore-seen-cache'), '/cache/restore'));
 $('provider').addEventListener('change', fillModels);
@@ -165,3 +167,6 @@ async function boot() {
 await boot();
 let refreshing = false;
 setInterval(async () => { if (document.hidden || refreshing) return; refreshing = true; try { await refresh(); } catch (error) { notice(error.message, true); } finally { refreshing = false; } }, 2500);
+
+$('clear-collection').addEventListener('click', () => action($('clear-collection'), '/collection/clear'));
+$('restore-collection').addEventListener('click', () => action($('restore-collection'), '/collection/restore'));

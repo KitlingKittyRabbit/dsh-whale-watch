@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { BROWSER_DISABLED_MESSAGE } from './disabled-browser.js';
 
 export const PANEL_PATH = '/plugins/dafeiyu-patrol';
 const assets = {
@@ -64,8 +65,9 @@ export function createHandler(engine) {
         if (route === '/api/background/update') return send(res, 200, await engine.updateBackground(data));
         if (route === '/api/settings') return send(res, 200, await engine.settings(data));
         if (route === '/api/data-key') return send(res, 200, await engine.dataKey(data));
-        if (route === '/api/login') { if (engine.active) throw new Error('任务进行中，请先停止或在现有采集窗口处理登录'); return send(res, 200, await engine.browser.login()); }
-        if (route === '/api/source') { if (engine.active) throw new Error('请等当前任务结束后再打开原帖'); return send(res, 200, await engine.browser.openNote(data.url)); }
+        if (route === '/api/login' || route === '/api/source') return send(res, 410, { error: BROWSER_DISABLED_MESSAGE });
+        if (route === '/api/collection/clear') return send(res, 200, await engine.clearCollection());
+        if (route === '/api/collection/restore') return send(res, 200, await engine.restoreCollection());
         if (route === '/api/start') return send(res, 200, await engine.start(data));
         if (route === '/api/cache/clear') return send(res, 200, await engine.clearSeenCache());
         if (route === '/api/cache/restore') return send(res, 200, await engine.restoreSeenCache());

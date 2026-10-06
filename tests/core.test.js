@@ -19,7 +19,10 @@ async function fixture(t, browser, model = {}) {
     } return rows;
   } };
   const dir = await mkdtemp(join(tmpdir(), 'patrol-test-')); t.after(() => rm(dir, { recursive: true, force: true }));
-  const engine = await new PatrolEngine(new Store(dir), { close: async () => {}, ...browser }, { cacheKey: (item, options) => hash(item.contentHash + options.rules), analyze: async () => result(), ...model }).init();
+  const apiSource = { hasKey: true, init: async () => {}, async *collect(options, signal, progress) {
+    for await (const item of browser.collect(options, signal, progress)) yield item.kind === 'note' ? { note: item, comments: [] } : { note: null, comments: [item] };
+  } };
+  const engine = await new PatrolEngine(new Store(dir), { close: async () => {}, ...browser }, { cacheKey: (item, options) => hash(item.contentHash + options.rules), analyze: async () => result(), ...model }, apiSource).init();
   return engine;
 }
 test('只接受逐字证据；引用上级评论不能伪装成目标原文', () => {
@@ -94,7 +97,7 @@ test('同一评论内容改变时保留历史并撤回旧结论和复核状态',
   const next = await engine.store.upsert({ ...record(), text: '改成正常讨论' });
   assert.equal(next.id, item.id); assert.equal(next.analysis, null); assert.equal(next.review.verdict, 'pending'); assert.equal(next.history.length, 1);
 });
-test('登录暂停不宣称成功；可继续，且没有自动完成验证', async t => {
+test('数据读取暂停不宣称成功；可继续，且没有自动完成验证', async t => {
   let attempts = 0;
   const engine = await fixture(t, { async *collect() { if (++attempts === 1) throw new NeedsAttention('请登录'); yield record(); } });
   await engine.start(); await engine.active.promise;
@@ -148,7 +151,7 @@ test('历史去重跨任务及存储重启有效，主动取消后可重新读�
   // Includes a failed-only URL and manually imported note: neither becomes collection history.
   engine.store.data.jobs.push({ status: 'failed', options: { urls: ['unused'] } });
   await engine.import({ kind: 'note', text: '手动摘录', url: 'https://www.xiaohongshu.com/explore/6ac119d5000000001500fd75', analyze: false });
-  engine = await new PatrolEngine(new Store(engine.store.root), adapter, engine.model).init();
+  engine = await new PatrolEngine(new Store(engine.store.root), adapter, engine.model, engine.apiCollector).init();
   await engine.start({ analyze: false }); await engine.active.promise;
   assert.equal(reads, 1); const job = engine.store.data.jobs.at(-1);
   assert.equal(job.status, 'completed'); assert.equal(job.notesExcluded, 1); assert.equal(job.notesAttempted, 0); assert.equal(job.collected, 0); assert.match(job.message, /没有发现新笔记/);
@@ -169,12 +172,12 @@ test('清空已查缓存保留原文分析复核，重启仍为空，重新采�
   await engine.review({ id: engine.store.data.items[0].id, verdict: 'dismissed', note: '保留复核' });
   // A legacy installation has notes but no independent cache: migrate existing history once.
   delete engine.store.data.seenCache; await engine.store.save();
-  engine = await new PatrolEngine(new Store(engine.store.root), adapter, engine.model).init();
+  engine = await new PatrolEngine(new Store(engine.store.root), adapter, engine.model, engine.apiCollector).init();
   assert.equal(engine.state().seenCache.count, 1);
   const originals = structuredClone(engine.store.data.items);
   const cleared = await engine.clearSeenCache(); assert.equal(cleared.cleared, 1);
   assert.deepEqual(engine.store.data.items, originals); assert.equal(engine.state().seenCache.count, 0);
-  engine = await new PatrolEngine(new Store(engine.store.root), adapter, engine.model).init();
+  engine = await new PatrolEngine(new Store(engine.store.root), adapter, engine.model, engine.apiCollector).init();
   assert.equal(engine.state().seenCache.count, 0); assert.equal(engine.state().seenCache.canRestore, true);
   await engine.start(); await engine.active.promise;
   assert.equal(reads, 2); assert.equal(calls, 1); assert.equal(engine.store.data.jobs.at(-1).cached, 1);
@@ -214,7 +217,7 @@ test('已阅从各未阅筛选移除，保留原文和分析，重启持久化�
   assert.equal(engine.results({ filter: 'read' }).total, 1);
   assert.equal(engine.state().counts.total, 2); assert.equal(engine.state().counts.unread, 1); assert.equal(engine.state().counts.pending, 1);
   assert.equal(first.text, original.text); assert.deepEqual(first.analysis, original.analysis); assert.ok(first.readAt);
-  engine = await new PatrolEngine(new Store(engine.store.root), engine.browser, engine.model).init();
+  engine = await new PatrolEngine(new Store(engine.store.root), engine.browser, engine.model, engine.apiCollector).init();
   assert.equal(engine.results({ filter: 'read' }).total, 1);
   await engine.start({}, 'analyze'); await engine.active.promise; assert.equal(calls, 1);
   await engine.markRead({ id: first.id, read: false });
@@ -231,10 +234,10 @@ test('相同内容不重新弹出已阅记录，实际变化重新出现并保�
 test('旧人工复核映射为已阅，恢复未阅后重启不会再次隐藏', async t => {
   const engine = await fixture(t, {});
   const first = await engine.store.upsert(record(100)); delete first.readAt; first.review = { verdict: 'dismissed', note: '旧复核理由', at: new Date().toISOString() }; await engine.store.save();
-  let next = await new PatrolEngine(new Store(engine.store.root), engine.browser, engine.model).init();
+  let next = await new PatrolEngine(new Store(engine.store.root), engine.browser, engine.model, engine.apiCollector).init();
   assert.equal(next.results().total, 0); assert.equal(next.results({ filter: 'read' }).items[0].review.note, '旧复核理由');
   await next.markRead({ id: first.id, read: false });
-  next = await new PatrolEngine(new Store(engine.store.root), engine.browser, engine.model).init();
+  next = await new PatrolEngine(new Store(engine.store.root), engine.browser, engine.model, engine.apiCollector).init();
   assert.equal(next.results().total, 1);
 });
 
@@ -292,12 +295,12 @@ test('继续已完成分析不会重新读取配图；中断状态在重启后�
   done.analysis=result();done.analysisKey=engine.model.cacheKey(done,engine.store.data.settings);
   await engine.store.upsert(record(221));
   engine.store.data.jobs.push({id:'interrupted-job',status:'running',mode:'analyze',options:{maxAnalysis:1}});await engine.store.save();
-  const resumed=await new PatrolEngine(new Store(engine.store.root),engine.browser,engine.model).init();
+  const resumed=await new PatrolEngine(new Store(engine.store.root),engine.browser,engine.model, engine.apiCollector).init();
   await resumed.resume({jobId:'interrupted-job'});await resumed.active.promise;
   assert.equal(images,0);assert.equal(analyses,1);assert.equal(resumed.state().counts.pending,0);
 });
 
-test('登录暂停继续原采集任务，不因其它待分析记录改成分析任务', async t => {
+test('数据读取暂停继续原采集任务，不因其它待分析记录改成分析任务', async t => {
   let attempts=0;
   const engine=await fixture(t,{async *collect(){attempts++;if(attempts===1)throw new NeedsAttention('请登录');yield {...record(230),kind:'note'};}});
   await engine.store.upsert(record(231));

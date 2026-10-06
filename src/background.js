@@ -7,7 +7,7 @@ export const backgroundStartSchema = z.object({
   ids: z.array(z.string().min(1).max(100)).max(20).optional(),
   urls: z.array(z.string().max(2000)).max(20).default([]),
   keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(5).optional(),
-  refreshSources: z.boolean().default(true),
+  refreshSources: z.boolean().default(false),
 });
 export const backgroundUpdateSchema = z.object({ enabled: z.boolean().optional(), memo: z.string().trim().min(20).max(24000).optional() });
 const readingSchema = z.object({

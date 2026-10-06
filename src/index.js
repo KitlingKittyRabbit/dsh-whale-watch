@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Store } from './store.js';
-import { XhsBrowser } from './browser.js';
+import { DisabledBrowser } from './disabled-browser.js';
 import { DshModel } from './model.js';
 import { PatrolEngine } from './engine.js';
 import { createHandler, PANEL_PATH } from './http.js';
@@ -13,7 +13,7 @@ export const name = 'dafeiyu-patrol';
 export const inject = ['llm', 'agentDefaultModel', 'agentPresets', 'attachments'];
 export async function apply(ctx, config = {}) {
   const root = config.dataDir || join(process.env.DSH_HOME || join(homedir(), '.dsh'), 'dafeiyu-patrol');
-  const engine = await new PatrolEngine(new Store(root), new XhsBrowser(root, ctx.attachments), new DshModel(ctx), new SocialDataX(root, ctx.attachments)).init();
+  const engine = await new PatrolEngine(new Store(root), new DisabledBrowser(), new DshModel(ctx), new SocialDataX(root, ctx.attachments)).init();
   ctx.provide('dafeiyuPatrol', engine);
   ctx.effect(() => () => engine.dispose(), 'patrol cleanup');
   ctx.inject(['webServer', 'connection'], httpCtx => {

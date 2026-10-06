@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { startSchema, settingsSchema, reviewSchema, resumeSchema, readSchema, importSchema, validateNoteUrl } from './schema.js';
 import { NeedsAttention } from './browser.js';
+import { BROWSER_DISABLED_MESSAGE } from './disabled-browser.js';
 import { loadEvaluationCases, evaluationItem, summarizeEvaluation } from './evaluation.js';
 import { analysisMaterial, imageContext } from './images.js';
 import { hash } from './store.js';
@@ -50,7 +51,8 @@ export class PatrolEngine {
       discussions: units.filter(i => i.kind === 'discussion').length, standalone: units.filter(i => i.discussionSummary.standalone).length,
       unit: 'discussion',
     }, seenCache: { count: data.seenCache.ids.length, lastClearedAt: data.seenCache.clearedAt, canRestore: !!data.seenCache.previousIds?.length },
-    background: { enabled: data.background.enabled, activeId: data.background.active?.id || null, articlesRead: data.background.active?.readings.length || 0 }, browserOpen: !!this.browser.context, activeJob: this.active?.job.id || null };
+    collection: { canClear: !!data.items.length || !!data.seenCache.ids.length || data.jobs.some(j => j.mode === 'scan' || j.mode === 'analyze' || j.mode?.startsWith('item:')), canRestore: !!data.collectionTrash, backupRecords: data.collectionTrash?.items?.length || 0, clearedAt: data.collectionTrash?.clearedAt || null },
+    background: { enabled: data.background.enabled, activeId: data.background.active?.id || null, articlesRead: data.background.active?.readings.length || 0 }, browserOpen: false, browserEnabled: false, activeJob: this.active?.job.id || null };
   }
   results({ filter = 'all', limit = 50, offset = 0 } = {}) {
     const archive = filter === 'read' || filter === 'reviewed';
@@ -72,9 +74,20 @@ export class PatrolEngine {
     const count = await this.store.restoreSeenCache();
     return { count, message: `已撤销清理，已查缓存现有 ${count} 篇笔记。` };
   }
+  async clearCollection() {
+    if (this.active) throw new Error('任务进行中，请先停止任务再清空采集记录');
+    const cleared = await this.store.clearCollection();
+    return { cleared: cleared.count, message: cleared.changed ? `已清空${cleared.count}条采集记录、对应巡查任务及已查缓存。模型、规则、背景和密钥保留，可撤销本次清空。` : '采集记录已经为空。' };
+  }
+  async restoreCollection() {
+    if (this.active) throw new Error('任务进行中，请先停止任务再撤销采集记录清空');
+    const restored = await this.store.restoreCollection();
+    return { restored, message: `已撤销采集记录清空，恢复${restored}条原记录；清空后新采集的内容保留。` };
+  }
   async settings(input) {
     if (this.active) throw new Error('任务进行中，请先停止任务再修改设置');
-    this.store.data.settings = settingsSchema.parse(input); await this.store.save(); return this.state();
+    if (input.collectionSource === 'browser') throw new Error(BROWSER_DISABLED_MESSAGE);
+    this.store.data.settings = settingsSchema.parse({ ...input, collectionSource: 'socialdatax' }); await this.store.save(); return this.state();
   }
   async dataKey(input) {
     if (this.active) throw new Error('任务进行中，请先停止任务再修改数据服务密钥');
@@ -84,11 +97,11 @@ export class PatrolEngine {
     return { message: input.apiKey.trim() ? '数据服务密钥已保存在本机；未发起付费调用。' : '数据服务密钥已清除。', configured: this.apiCollector.hasKey };
   }
   async *collectRecords(options, signal, progress) {
-    if (options.collectionSource !== 'socialdatax') { yield* this.browser.collect(options, signal, progress); return; }
+    if (options.collectionSource !== 'socialdatax') throw new Error(BROWSER_DISABLED_MESSAGE);
     if (!this.apiCollector) throw new Error('当前宿主未启用数据服务');
     for await (const bundle of this.apiCollector.collect(options, signal, progress)) {
       // Save comments before committing the note's complete snapshot and seen-cache entry.
-      for (const comment of bundle.comments) yield comment; yield bundle.note;
+      for (const comment of bundle.comments) yield comment; if (bundle.note) yield bundle.note;
     }
   }
   async retry(input) {
@@ -125,7 +138,9 @@ export class PatrolEngine {
   async start(input = {}, mode = 'scan', backgroundPlan = null) {
     if (this.active) throw new Error('已有任务运行中，请先停止或等待完成');
     const options = this.analysisSettings(this.options(input));
-    if ((mode === 'scan' || mode === 'background' && backgroundPlan?.source !== 'existing') && options.collectionSource === 'socialdatax' && !this.apiCollector?.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key');
+    const needsCollection = mode === 'scan' || mode === 'background' && (backgroundPlan?.source !== 'existing' || backgroundPlan?.refreshSources && backgroundPlan?.urls?.length);
+    if (needsCollection && options.collectionSource !== 'socialdatax') throw new Error(BROWSER_DISABLED_MESSAGE);
+    if (needsCollection && !this.apiCollector?.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key，或导入原文进行离线分析');
     const job = { id: randomUUID(), mode, status: 'running', startedAt: new Date().toISOString(),
       options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
     this.store.data.jobs.push(job);

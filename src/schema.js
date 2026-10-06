@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { CATEGORIES, canonicalCategory } from './rules.js';
 
 export const settingsSchema = z.object({
-  collectionSource: z.enum(['browser', 'socialdatax']).default('browser'),
+  collectionSource: z.enum(['browser', 'socialdatax']).default('socialdatax'),
   apiBudgetYuan: z.number().min(0.1).max(100).default(5),
   discussionNoteLimit: z.number().int().min(1).max(30).default(5),
   discussionAnalysisLimit: z.number().int().min(1).max(2001).default(500),

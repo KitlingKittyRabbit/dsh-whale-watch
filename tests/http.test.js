@@ -26,3 +26,15 @@ test('配图接口只读取记录中的附件，不允许通过参数读取任�
   const response = await fetch(base + 'fixture/1'); assert.equal(response.headers.get('content-type'), 'image/png'); assert.equal(response.headers.get('cache-control'), 'private, no-store'); assert.deepEqual([...new Uint8Array(await response.arrayBuffer())], [1, 2, 3]);
   assert.equal((await fetch(base + 'fixture/2')).status, 404); assert.equal(reads, 1);
 });
+
+test('旧浏览器登录与打开原帖接口均拒绝，清空采集仍受同源限制并支持撤销', async t => {
+  let opened = 0, cleared = 0, restored = 0;
+  const engine = { browser: { login: async () => { opened++; }, openNote: async () => { opened++; } },
+    clearCollection: async () => { cleared++; return { cleared: 2 }; }, restoreCollection: async () => { restored++; return { restored: 2 }; } };
+  const server = createServer(createHandler(engine)); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (path, origin = base) => fetch(base + '/plugins/dafeiyu-patrol/api/' + path, { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}' });
+  for (const path of ['login','source']) { const r = await post(path); assert.equal(r.status, 410); assert.match((await r.json()).error, /已停用/); }
+  assert.equal(opened, 0); assert.equal((await post('collection/clear','https://evil.example')).status, 403); assert.equal(cleared, 0);
+  assert.equal((await post('collection/clear')).status, 200); assert.equal((await post('collection/restore')).status, 200); assert.equal(cleared, 1); assert.equal(restored, 1);
+});

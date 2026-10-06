@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { Store, hash } from '../src/store.js';
-import { XhsBrowser } from '../src/browser.js';
+import { DisabledBrowser } from '../src/disabled-browser.js';
 import { PatrolEngine } from '../src/engine.js';
 import { createHandler } from '../src/http.js';
 
@@ -12,7 +12,7 @@ const model = {
   async analyze() { throw new Error('当前是独立界面预览，请从 DSH 中打开插件以使用已配置的模型'); },
 };
 const root = join(process.cwd(), '.data', 'preview');
-const engine = await new PatrolEngine(new Store(root), new XhsBrowser(root), model).init();
+const engine = await new PatrolEngine(new Store(root), new DisabledBrowser(), model).init();
 const handler = createHandler(engine);
 const server = createServer((req, res) => {
   if (req.url === '/') { res.writeHead(302, { location: '/plugins/dafeiyu-patrol' }); res.end(); }

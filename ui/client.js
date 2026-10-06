@@ -41,7 +41,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
       item.discussion && h('div', null,
         h(Hint, null, `已保存 ${item.discussion.commentsRead} 条评论${item.discussion.reportedComments != null ? `／接口标注 ${item.discussion.reportedComments} 条` : ''} · ${item.discussion.complete ? '接口分页已读取完毕' : '评论区未完整读取'}`),
         ...(item.discussion.limitations || []).map((text, i) => h(Hint, { key: i }, text))),
-      item.url && h('div', { className: 'patrol-actions' }, h(Button, { disabled: busy, onClick: () => act('/source', { url: item.url }) }, '在采集浏览器查看'), h('a', { href: item.url, target: '_blank', rel: 'noopener noreferrer' }, '用当前浏览器打开 ↗')),
+      item.url && h('div', { className: 'patrol-actions' }, h('a', { href: item.url, target: '_blank', rel: 'noopener noreferrer' }, '手动打开原帖 ↗')),
       item.context && h('details', { className: 'patrol-context' }, h('summary', null, '查看上下文'), h('div', { className: 'patrol-raw' }, item.context)),
       a && h('div', { className: 'patrol-assessment' },
         a.interpretation && h('p', null, '本条含义：' + a.interpretation),
@@ -115,7 +115,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
   }
   function Background({ background, busy, running, act, defaultKeywords }) {
     const [source, setSource] = useState('existing'), [count, setCount] = useState(10), [links, setLinks] = useState(''), [terms, setTerms] = useState(defaultKeywords || '');
-    const [selected, setSelected] = useState(null), [refreshSources, setRefreshSources] = useState(true), [memo, setMemo] = useState('');
+    const [selected, setSelected] = useState(null), [refreshSources, setRefreshSources] = useState(false), [memo, setMemo] = useState('');
     const memoId = useRef(null); const active = background?.active, draft = background?.draft;
     useEffect(() => { if (selected === null && background) setSelected(background.articles.slice(0, 10).map(a => a.id)); }, [background, selected]);
     useEffect(() => { if (active?.id !== memoId.current) { memoId.current = active?.id; setMemo(active?.memo || ''); } }, [active]);
@@ -124,7 +124,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const sourceEntry = r => h('details', { key: r.ref, className: 'patrol-background-entry' },
       h('summary', null, `[${r.ref}] ${r.title}`),
       h('p', null, r.summary),
-      r.url && h(Button, { disabled: busy || running, onClick: () => act('/source', { url: r.url }) }, '查看背景原帖'),
+      r.url && h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer' }, '手动打开背景原帖 ↗'),
       h(Hint, null, r.origin === 'curated-review' ? `采样评论 ${r.commentsRead} 条 · 人工检视配图 ${r.reviewedImages}/${r.sourceImageCount} 张 · ${r.coverage?.localOriginalAvailable ? '已关联本机原文' : '摘要与来源链接'}${r.coverage?.imageTextUnavailable ? '；模型配图转录未完整提供' : ''}。` : `阅读材料 ${r.originalChars || 0} 字 · 可见评论 ${r.commentsRead} 条 · 配图${r.coverage?.imagesUnread ? '未完整读取' : '无缺图标记'}。`),
       r.uncertainties.length > 0 && h(Hint, null, r.uncertainties.join('；')),
       r.observations.length > 0 && h('details', null, h('summary', null, '知识点与原文依据'), ...r.observations.map((o, i) => h('div', { key: i }, h('p', null, `${o.subject}：${o.explanation}`), h('blockquote', null, `${o.sourcePart} · ${o.status === 'source_claim' ? '来源说法' : o.status === 'uncertain' ? '不确定' : '可见内容'}：${o.quote}`)))));
@@ -182,7 +182,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const [notice, setNotice] = useState(null), [busy, setBusy] = useState(false);
     const [draft, setDraft] = useState(null), [keywords, setKeywords] = useState(''), [urls, setUrls] = useState('');
     const [collectOnly, setCollectOnly] = useState(false), [excludeSeen, setExcludeSeen] = useState(true);
-    const [collectionSource, setCollectionSource] = useState('socialdatax'), [dataKey, setDataKey] = useState('');
+    const collectionSource = 'socialdatax'; const [dataKey, setDataKey] = useState('');
     const [input, setInput] = useState({ kind: 'comment', title: '', text: '', context: '', url: '' });
     const lifecycle = useRef(null), requestId = useRef(0), initialized = useRef(false);
     const refresh = useCallback(async signal => {
@@ -192,7 +192,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
       if (signal.aborted || id !== requestId.current) return;
       setState(next); setReport(evaluation); setBackground(nextBackground);
       if (offset > 0 && records.total <= offset) { setOffset(Math.max(0, Math.floor((records.total - 1) / 20) * 20)); } else setResults(records);
-      if (!initialized.current) { initialized.current = true; setDraft(next.settings); setKeywords(next.settings.keywords.join('，')); setCollectionSource(next.settings.collectionSource); }
+      if (!initialized.current) { initialized.current = true; setDraft(next.settings); setKeywords(next.settings.keywords.join('，')); }
     }, [filter, offset]);
     useEffect(() => {
       const controller = new AbortController(); lifecycle.current = controller;
@@ -220,7 +220,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
         if (controller.signal.aborted) return;
         setNotice({ text: result.message || '操作已保存。' });
         if (path === '/data-key') setDataKey('');
-        if (path === '/settings') { setDraft(result.settings); setCollectionSource(result.settings.collectionSource); }
+        if (path === '/settings') { setDraft(result.settings); }
         await refresh(controller.signal);
       } catch (error) { if (!controller.signal.aborted) setNotice({ error: true, text: error.message }); }
       finally { if (!controller.signal.aborted) setBusy(false); }
@@ -235,7 +235,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('div', { className: 'patrol-native', 'data-patrol-native': true },
       h('div', { className: 'patrol-workbench' },
         h('header', { className: 'patrol-header' }, h('div', null,
-          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.2')),
+          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.3')),
           h(Hint, null, '辅助发现不合理讨论，共同维护讨论与创作环境。')), 
           h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话'))),
         h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查结果'], ['background', '背景阅读'], ['import', '导入文字'], ['settings', '规则与设置'], ['evaluation', '示例评估']].map(([id, label]) =>
@@ -253,9 +253,13 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h('div', { key: label }, h('span', null, label), h('strong', null, n)))),
             h(Hint, null, `当前保存 ${state.counts.discussions} 篇笔记讨论${state.counts.standalone ? `，另有 ${state.counts.standalone} 条单独导入` : ''}；原始记录共 ${state.counts.records} 条，已归并显示。`),
             h(Hint, null, '按“笔记＋已保存评论区”计篇，一篇内有可疑正文或评论就列为可疑。其它仅表示已读部分的结果；有尚未分析内容时保留待分析状态。已保存的旧评论归入原笔记，未采到的部分不会自动补全。'),
+            h(Box, { title: '采集记录管理' },
+              h(Hint, null, '清空正文、评论、分析、已阅记录、对应巡查任务及已查缓存；模型、规则、背景和密钥保留。可撤销最近一次清空。'),
+              h('div', { className: 'patrol-actions' },
+                h(Button, { disabled: busy || running || !state.collection?.canClear, onClick: () => act('/collection/clear') }, '清空采集记录'),
+                state.collection?.canRestore && h(Button, { disabled: busy || running, onClick: () => act('/collection/restore') }, '撤销清空采集记录'))),
             h(Box, { title: '发起一次巡查' }, h('p', { className: 'patrol-meta' }, `分析模型：${route?.provider || '读取中'} / ${route?.model || ''}`),
-              h(Field, { label: '读取方式' }, h('select', { value: collectionSource, disabled: busy || running, onChange: e => setCollectionSource(e.target.value) },
-                h('option', { value: 'socialdatax' }, 'SocialDataX API：按篇读取正文、配图和评论'), h('option', { value: 'browser' }, '浏览器采集：原有方式'))),
+              h(Hint, null, '读取方式：数据 API。浏览器自动采集已停用，待风控问题解决后再考虑恢复；也可直接导入原文。'),
               collectionSource === 'socialdatax' && h(Hint, null, state.dataService?.configured ? `数据密钥已配置。按当前单价限制本轮数据请求，额度 ¥${state.settings.apiBudgetYuan}，模型费用另计。` : '先到“规则与设置”填写 SocialDataX API Key。此方式不需要登录小红书。'),
               h(Field, { label: '关键词' }, h('input', { value: keywords, onChange: e => setKeywords(e.target.value), placeholder: '大肥鱼，DeepSeek拟人' })),
               h('details', null, h('summary', null, '或指定笔记链接'), h(Field, { label: '每行一个链接' }, h('textarea', { value: urls, onChange: e => setUrls(e.target.value), rows: 3, placeholder: '小红书笔记或分享链接' }))),
@@ -268,15 +272,15 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h('label', null, h('input', { type: 'checkbox', checked: collectOnly, onChange: e => setCollectOnly(e.target.checked) }), ' 仅采集，暂不调用模型'),
               h('div', { className: 'patrol-actions' }, h(Button, { primary: true, disabled: busy || running, onClick: () => {
                 const list = urls.split('\n').map(s => s.trim()).filter(Boolean); act('/start', { ...(list.length ? { urls: list } : { keywords: split(keywords) }), collectionSource, analyze: !collectOnly, excludeSeen });
-              } }, collectionSource === 'socialdatax' ? '按篇读取并分析' : '开始巡查'), collectionSource === 'browser' && h(Button, { disabled: busy || running, onClick: () => act('/login') }, state.browserOpen ? '查看采集浏览器' : '打开采集浏览器'),
+              } }, '按篇读取并分析'),
               h(Button, { disabled: busy || running, onClick: () => act('/analyze') }, '分析未阅篇目')),
-              h(Hint, null, collectionSource === 'socialdatax' ? `本轮最多 ${state.settings.maxNotes} 篇，分页读取评论及回复，直到读完或费用上限。先收集再结合讨论分析，本轮最多分析 ${state.settings.discussionNoteLimit} 篇，篇内分批输出具体依据；超出篇目可继续分析。另最多看图 ${state.settings.maxVision} 条笔记或评论。` : `本轮最多 ${state.settings.maxNotes} 篇笔记、每篇 ${state.settings.maxComments} 条可见评论、${state.settings.discussionNoteLimit} 篇整篇分析；另最多读取 ${state.settings.maxVision} 条笔记或评论的配图，每条最多 ${state.settings.maxImagesPerNote} 张。`),
-              h(Hint, null, collectionSource === 'socialdatax' ? '只读取接口返回的公开内容，不保证包含隐藏或删除的评论。读取不完整会显示原因；不会自动回退到浏览器。第三方 API 不等于平台官方授权。' : '只能读取网页版实际展示的内容。要求 App 扫码的笔记会列为未读取，不送模型分析；可在 App 中复制原文到“导入文字”。首次需在采集浏览器登录。')),
+              h(Hint, null, `本轮最多 ${state.settings.maxNotes} 篇，分页读取评论及回复，直到读完或费用上限。先收集再结合讨论分析，本轮最多分析 ${state.settings.discussionNoteLimit} 篇，篇内分批输出具体依据；超出篇目可继续分析。另最多看图 ${state.settings.maxVision} 条笔记或评论。`),
+              h(Hint, null, '只读取接口返回的公开内容，不保证包含隐藏或删除的评论。读取不完整会显示原因；不会自动回退到浏览器。第三方 API 不等于平台官方授权。')),
             job && !running && !canContinue && h(Box, { title: statuses[job.status] || job.status }, h('p', null, job.message),
               job.apiRequests > 0 && h(Hint, null, `数据读取 ${job.apiRequests} 次 · 已确认 ¥${(job.apiCostCents / 100).toFixed(2)}${job.apiUnconfirmed ? ` · ${job.apiUnconfirmed} 次费用尚未确认` : ''}（模型另计）`),
               ...(job.discussionGaps || []).map((gap, i) => h(Hint, { key: i }, `${gap.title}：${gap.limitations.join('；')}`)),
               job.notesAttempted !== undefined && h(Hint, null, `排除已查 ${job.notesExcluded || 0} 篇 · 检查 ${job.notesAttempted} 篇 · 读到 ${job.notesRead} 篇 · 未读取 ${job.skippedNotes?.length || 0} 篇`),
-              (job.skippedNotes || []).length > 0 && h('details', { open: true }, h('summary', null, '未读取的笔记'), ...job.skippedNotes.map((entry, i) => h('div', { key: i }, h('p', null, entry.reason), h(Button, { disabled: busy, onClick: () => act('/source', { url: entry.url }) }, '在采集浏览器查看')))),
+              (job.skippedNotes || []).length > 0 && h('details', { open: true }, h('summary', null, '未读取的笔记'), ...job.skippedNotes.map((entry, i) => h('div', { key: i }, h('p', null, entry.reason), h('a', { href: entry.url, target: '_blank', rel: 'noopener noreferrer' }, '手动打开原帖 ↗')))),
               h('details', null, h('summary', null, '查看任务日志'), h('ol', null, ...job.messages.map((log, i) => h('li', { key: i }, stamp(log.at) + ' · ' + log.message))))),
             h('div', { className: 'patrol-result-header' }, h('h2', null, '笔记与评论区'), h('span', { className: 'patrol-meta' }, results.total + ' 篇')),
             h('div', { className: 'patrol-actions patrol-filters', role: 'group', 'aria-label': '筛选结果' }, ...[['all', '未阅'], ['suspicious', '可疑'], ['other', '其它'], ['unanalyzed', '待分析'], ['read', '已阅']].map(([id, label]) =>
@@ -298,7 +302,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
             e.preventDefault(); if (draft.visionProvider && !draft.visionModel) { setNotice({ error: true, text: '请选择看图模型。' }); return; } if (draft.provider && !draft.model) { setNotice({ error: true, text: '请选择分析模型。' }); return; }
             act('/settings', { ...draft, keywords: split(keywords), apiBudgetYuan: Number(draft.apiBudgetYuan), discussionNoteLimit: Number(draft.discussionNoteLimit), maxNotes: Number(draft.maxNotes), maxComments: Number(draft.maxComments), maxAnalysis: Number(draft.maxAnalysis), maxVision: Number(draft.maxVision), maxImagesPerNote: Number(draft.maxImagesPerNote) });
           } }, h(Box, { title: '数据来源与费用' },
-              h(Field, { label: '默认读取方式' }, h('select', { value: draft.collectionSource, onChange: updateDraft('collectionSource') }, h('option', { value: 'socialdatax' }, 'SocialDataX API：按篇读取'), h('option', { value: 'browser' }, '浏览器采集'))),
+              h(Hint, null, '仅支持数据 API 采集。浏览器自动浏览、登录和原帖跳转接口均已停用；可离线导入或分析已保存内容。'),
               h('div', { className: 'patrol-grid-two' }, h(Field, { label: '本轮数据额度（元，按当前单价）' }, h('input', { type: 'number', min: 0.1, max: 100, step: 0.1, value: draft.apiBudgetYuan, required: true, onChange: updateDraft('apiBudgetYuan') })),
                 h(Field, { label: '每轮最多分析的篇数（含已保存评论）' }, h('input', { type: 'number', min: 1, max: 30, value: draft.discussionNoteLimit, required: true, onChange: updateDraft('discussionNoteLimit') }))),
               h(Hint, null, '按当前0.10元/次限制请求总量，搜索、正文、一级评论和回复分页均计入。连接失败也保守占用名额，不自动重试；发现价格变化则停止。模型及看图费用另计。'),
@@ -307,15 +311,15 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h('div', { className: 'patrol-actions' }, h(Button, { disabled: busy || running || !dataKey.trim(), onClick: () => act('/data-key', { apiKey: dataKey }) }, '保存数据密钥'),
                 state.dataService?.configured && h(Button, { disabled: busy || running, onClick: () => act('/data-key', { apiKey: '' }) }, '清除数据密钥'),
                 h('a', { href: 'https://socialdatax.com/ai/', target: '_blank', rel: 'noopener noreferrer' }, '获取 API Key ↗'))),
-            h(Box, { title: '模型与浏览器采集范围' }, h(Hint, null, '复用 DSH 已配置的模型和凭据，不另存模型密钥。评论采集上限只适用于浏览器；整篇分析按上面的篇数控制。'),
+            h(Box, { title: '模型与分析范围' }, h(Hint, null, '复用 DSH 已配置的模型和凭据，不另存模型密钥。整篇分析按上面的篇数控制；单独导入和样例评估使用各自上限。'),
               h('div', { className: 'patrol-grid-two' }, h(Field, { label: '模型服务' }, h('select', { value: draft.provider, onChange: e => setDraft(prev => ({ ...prev, provider: e.target.value, model: '' })) },
                 h('option', { value: '' }, '跟随 DSH 默认模型'), ...(catalog?.providers || []).map(p => h('option', { key: p.id, value: p.id }, p.name || p.id)))),
                 h(Field, { label: '分析模型' }, h('select', { value: draft.model, disabled: !draft.provider, onChange: updateDraft('model') },
                   h('option', { value: '' }, draft.provider ? '请选择模型' : '跟随默认模型'),
                   ...(catalog?.providers.find(p => p.id === draft.provider)?.models || []).map(m => h('option', { key: m.id, value: m.id }, m.name || m.id))))),
-              h('div', { className: 'patrol-grid-three' }, ...[['maxNotes', '每轮笔记上限', 1, 30], ['maxComments', '每篇评论上限', 0, 50], ['maxAnalysis', '单独导入及示例分析上限', 1, 100]].map(([id, label, min, max]) =>
+              h('div', { className: 'patrol-grid-three' }, ...[['maxNotes', '每轮笔记上限', 1, 30], ['maxAnalysis', '单独导入及示例分析上限', 1, 100]].map(([id, label, min, max]) =>
                 h(Field, { key: id, label }, h('input', { type: 'number', value: draft[id], min, max, required: true, onChange: updateDraft(id) })))),
-              h(Hint, null, `浏览器每轮最多读取 ${draft.maxNotes} 篇及每篇 ${draft.maxComments} 条可见评论。正文和已保存评论合并分析，每轮最多 ${draft.discussionNoteLimit} 篇；单独导入及示例评估上限 ${draft.maxAnalysis} 条。篇内分批判断，疑似问题另核对，模型费用另计。`)),
+              h(Hint, null, `API每轮最多读取 ${draft.maxNotes} 篇，评论及回复自动分页，受数据额度和采集保护上限限制。正文和已保存评论合并分析，每轮最多 ${draft.discussionNoteLimit} 篇；单独导入及示例评估上限 ${draft.maxAnalysis} 条。篇内分批判断，疑似问题另核对，模型费用另计。`)),
             h(Box, { title: '配图读取' },
               h('label', null, h('input', { type: 'checkbox', checked: draft.readImages, onChange: e => setDraft(prev => ({ ...prev, readImages: e.target.checked })) }), ' 分析时读取配图文字和画面'),
               h(Hint, null, '保存读取到的笔记和评论原图。看图另计调用，识别结果供整篇讨论分析使用；失败、漏图、模糊会提示。仅采集不会调用模型。'),

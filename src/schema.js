@@ -4,6 +4,7 @@ import { CATEGORIES, canonicalCategory } from './rules.js';
 export const settingsSchema = z.object({
   collectionSource: z.enum(['browser', 'socialdatax']).default('browser'),
   apiBudgetYuan: z.number().min(0.1).max(100).default(5),
+  discussionNoteLimit: z.number().int().min(1).max(30).default(5),
   discussionAnalysisLimit: z.number().int().min(1).max(2001).default(500),
   keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(5),
   provider: z.string().trim().max(100), model: z.string().trim().max(150),
@@ -19,6 +20,7 @@ export const settingsSchema = z.object({
 export const startSchema = z.object({
   collectionSource: settingsSchema.shape.collectionSource.unwrap().optional(),
   apiBudgetYuan: settingsSchema.shape.apiBudgetYuan.unwrap().optional(),
+  discussionNoteLimit: settingsSchema.shape.discussionNoteLimit.unwrap().optional(),
   discussionAnalysisLimit: settingsSchema.shape.discussionAnalysisLimit.unwrap().optional(),
   keywords: z.array(z.string().trim().min(1).max(80)).max(5).optional(),
   urls: z.array(z.string().max(2000)).max(30).optional(),

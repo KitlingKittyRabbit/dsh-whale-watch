@@ -11,6 +11,13 @@ import { parseAnalysis, validateNoteUrl } from '../src/schema.js';
 const result = (overrides = {}) => ({ decision: 'review', categories: ['骚扰动员'], reason: '鼓动攻击', evidence: ['去骚扰她'], uncertainties: [], confidence: .8, ...overrides });
 const record = (n = 0) => ({ kind: 'comment', sourceKey: `comment:${n}`, text: `去骚扰她 ${n}`, context: '作者在号召行动', title: '测试', url: '', coverage: {} });
 async function fixture(t, browser, model = {}) {
+  // Test adapters implement the same discussion entry point as the real model.
+  model = { ...model, async analyzeDiscussion(records, targets, options, signal) {
+    const rows = []; for (const item of targets) {
+      try { rows.push({ id: item.id, analysis: await this.analyze(item, options, signal) }); }
+      catch (error) { if (signal.aborted) throw error; rows.push({ id: item.id, error: error.message }); }
+    } return rows;
+  } };
   const dir = await mkdtemp(join(tmpdir(), 'patrol-test-')); t.after(() => rm(dir, { recursive: true, force: true }));
   const engine = await new PatrolEngine(new Store(dir), { close: async () => {}, ...browser }, { cacheKey: (item, options) => hash(item.contentHash + options.rules), analyze: async () => result(), ...model }).init();
   return engine;

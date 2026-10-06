@@ -43,7 +43,7 @@ async function refresh() {
     const route = s.provider ? s : catalog.current;
     $('model-current').textContent = catalog.mode === 'offline' ? '独立预览：请在 DSH 内使用模型分析' : `分析模型：${route.provider} / ${route.model}`;
   }
-  $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 每篇 ${s.maxComments} 条可见评论 · ${s.maxAnalysis} 条模型分析。结果按当前搜索排序读取。`;
+  $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 每篇 ${s.maxComments} 条可见评论 · ${s.discussionNoteLimit} 篇整篇分析。结果按当前搜索排序读取。`;
   const running = !!state.activeJob;
   $('seen-cache-count').textContent = `已查缓存：${state.seenCache?.count || 0} 篇`;
   $('clear-seen-cache').disabled = running || !state.seenCache?.count;
@@ -52,7 +52,7 @@ async function refresh() {
   $('stop').hidden = !running;
   const job = state.jobs[0];
   $('job-box').hidden = !job;
-  $('resume').hidden = running || !['paused', 'cancelled', 'interrupted'].includes(job?.status) || job?.mode === 'evaluate';
+  $('resume').hidden = running || !(['paused', 'cancelled', 'interrupted'].includes(job?.status) || job?.status === 'partial' && job.analysisDeferred) || job?.mode === 'evaluate';
   if (job) {
     $('job-status').textContent = job.status === 'running' && job.mode !== 'scan' ? '正在分析' : statuses[job.status] || job.status;
     $('job-message').textContent = job.message;
@@ -69,7 +69,7 @@ async function refreshResults(force = false) {
   // Preserve unfinished review notes while background progress changes.
   if (!force && document.activeElement?.classList.contains('review-note')) return;
   lastResults = serialized; total = result.total;
-  $('result-total').textContent = `${total} 条记录`;
+  $('result-total').textContent = `${total} 篇`;
   $('results').replaceChildren();
   if (!result.items.length) {
     const empty = el('div', undefined, 'empty');
@@ -81,7 +81,8 @@ async function refreshResults(force = false) {
   $('prev').disabled = offset === 0; $('next').disabled = offset + pageSize >= total;
   $('page-number').textContent = `${Math.floor(offset / pageSize) + 1} / ${Math.max(1, Math.ceil(total / pageSize))}`;
 }
-function card(item) {
+function card(item, embedded = false) {
+  if (item.kind === 'discussion') return discussionCard(item);
   const analysis = item.analysisStale ? null : item.analysis;
   const card = el('article', undefined, 'card ' + (analysis?.decision || ''));
   const head = el('div', undefined, 'card-head');
@@ -100,12 +101,27 @@ function card(item) {
     if (analysis.uncertainties.length) details.append(el('div', analysis.uncertainties.join('；'), 'uncertainties'));
     card.append(details);
   }
-  if (item.analysisError) { card.append(el('p', '分析失败：' + item.analysisError, 'uncertainties')); const retry = el('button', '重试这条'); retry.disabled = !!state.activeJob; retry.addEventListener('click', () => action(retry, '/analyze/item', { id: item.id })); card.append(retry); }
+  if (item.analysisError) { card.append(el('p', '分析失败：' + item.analysisError, 'uncertainties')); const retry = el('button', '重试这条'); retry.disabled = !!state.activeJob; retry.addEventListener('click', () => action(retry, '/analyze/item', { id: item.id })); if (!embedded) card.append(retry); }
   if (item.coverage?.imagesUnread) card.append(el('p', '配图详情与机器识别请在 DSH 原生巡查面板查看。', 'uncertainties'));
   if (item.context) { const detail = el('details'); detail.append(el('summary', '查看上下文'), el('div', item.context, 'context')); card.append(detail); }
   const read = el('button', item.readAt ? '恢复未阅' : '已阅');
   read.addEventListener('click', () => action(read, '/read', { id: item.id, read: !item.readAt }));
-  card.append(read); return card;
+  if (!embedded) card.append(read); return card;
+}
+function discussionCard(item) {
+  const node = el('article', undefined, 'card');
+  node.append(el('h3', item.title), el('span', item.inspectionResult === 'suspicious' ? '可疑' : item.inspectionResult === 'other' ? '其它' : '待分析', 'badge'));
+  node.append(el('p', `一篇笔记＋${item.discussionSummary.commentsRead}条已保存评论 · 可疑${item.discussionSummary.suspicious}条 · 待分析${item.discussionSummary.pending}条`));
+  for (const text of item.discussionSummary.limitations) node.append(el('p', text, 'uncertainties'));
+  const detail = el('details'); detail.append(el('summary', '查看正文、配图提示及评论判断'));
+  for (const entry of item.entries) detail.append(card(entry, true));
+  node.append(detail);
+  const read = el('button', item.readAt ? '整篇恢复未阅' : '整篇已阅');
+  read.disabled = !!state.activeJob;
+  read.addEventListener('click', () => action(read, '/read', { id: item.id, read: !item.readAt }));
+  const retry = el('button', '按当前规则与背景重新分析整篇'); retry.disabled = !!state.activeJob;
+  retry.addEventListener('click', () => action(retry, '/analyze/item', { id: item.id }));
+  node.append(read, retry); return node;
 }
 async function action(button, path, data = {}) {
   button.disabled = true;

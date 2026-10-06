@@ -59,7 +59,7 @@ for (const [text, category, target, context] of [
       })(),
     } });
     const result = await model.analyze(item, defaultSettings());
-    assert.equal(result.decision, 'review'); assert.equal(result.policyVersion, 'community-environment-v7');
+    assert.equal(result.decision, 'review'); assert.equal(result.policyVersion, 'community-environment-v8');
     assert.equal(calls.length, 2); for (const call of calls) assert.ok(call.system.includes(CONTEXTUAL_BEHAVIOR_GUIDE));
     const inputs = calls.map(call => JSON.parse(call.messages[0].content[0].text));
     assert.equal(inputs[0].target.text, text); assert.deepEqual(inputs[1].background, inputs[0].background);

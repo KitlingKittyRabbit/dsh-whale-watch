@@ -14,6 +14,7 @@ const note = { kind: 'note', sourceKey: `note:${noteId}`, text: '讨论作品', 
 const normal = { targetQuote: '我反对骚扰', interpretation: '本条反对骚扰', findings: [], missingContextAffectsDecision: false, decision: 'normal', categories: ['正常讨论'], reason: '反对骚扰', evidence: ['我反对骚扰'], uncertainties: [], confidence: .8 };
 async function* output(value) { yield { type: 'text-delta', index: 0, text: JSON.stringify(value) }; yield { type: 'finish', reason: { kind: 'stop' } }; }
 async function fixture(t, model) {
+  if (!model.analyzeDiscussion) model.analyzeDiscussion = async (records, targets) => targets.map(item => ({ id: item.id, analysis: normal }));
   const root = await mkdtemp(join(tmpdir(), 'patrol-images-')); t.after(() => rm(root, { recursive: true, force: true }));
   return new PatrolEngine(new Store(root), { close: async () => {} }, model).init();
 }
@@ -56,12 +57,12 @@ test('配图文字可作为笔记依据并标注来源，不能冒充评论原�
 });
 test('先读取所属配图再分析评论，重跑复用配图，规则变化不重复付费看图', async t => {
   let calls = 0; const observed = [];
-  const model = { visionKey: () => 'images-key', readImages: async () => { calls++; return note.vision; }, cacheKey: (item, settings) => JSON.stringify([item.text, item.vision, item.context, settings.rules]), analyze: async item => { observed.push(structuredClone(item)); return { ...normal, evidence: [] }; } };
+  const model = { visionKey: () => 'images-key', readImages: async () => { calls++; return note.vision; }, cacheKey: (item, settings) => JSON.stringify([item.text, item.vision, item.context, settings.rules]), analyzeDiscussion: async (records, targets) => { observed.push(structuredClone(records)); return targets.map(i => ({ id: i.id, analysis: { ...normal, evidence: [] } })); } };
   const engine = await fixture(t, model);
   const stored = await engine.store.upsert({ ...note, vision: null });
   await engine.store.upsert({ kind: 'comment', sourceKey: `comment:${noteId}:c1`, text: '我同意', context: '所属笔记：讨论作品', title: '测试评论', url: '', coverage: {} });
   await engine.start({ maxAnalysis: 2 }, 'analyze'); await engine.active.promise;
-  assert.equal(calls, 1); assert.equal(observed[0].kind, 'note'); assert.match(observed[1].context, /我反对骚扰/); assert.equal(observed[1].coverage.contextImagesUnread, false);
+  assert.equal(calls, 1); assert.equal(observed[0][0].kind, 'note'); assert.equal(observed[0][0].vision.pages[0].text, '我反对骚扰'); assert.equal(observed[0][1].coverage.contextImagesUnread, false);
   engine.store.data.settings.rules += '\n补充规则';
   await engine.start({ maxAnalysis: 2 }, 'analyze'); await engine.active.promise;
   assert.equal(calls, 1); assert.equal(engine.store.data.jobs.at(-1).visionCached, 1); assert.equal(stored.vision.complete, true);

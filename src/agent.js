@@ -5,10 +5,10 @@ export function apply(ctx) {
   const engine = ctx.dafeiyuPatrol;
   const output = { schema: { type: 'json' }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] };
   const tool = (name, description, parameters, execute) => ctx.effect(() => ctx.tools.register(defineTool({ name, description, parameters, output, execute })), `patrol tool ${name}`);
-  tool('patrol_start', '发起关键词搜索或指定笔记采集，立即返回任务编号。SocialDataX方式分页读取整篇正文、配图、评论和回复，受本轮数据费用上限限制，再结合完整已保存讨论分析。浏览器方式保留原有5/10/55限额。不得自动改数据来源、提高费用或回退浏览器。', {
+  tool('patrol_start', '发起关键词搜索或指定笔记采集，立即返回任务编号。SocialDataX方式分页读取整篇正文、配图、评论和回复，受本轮数据费用上限限制，再结合完整已保存讨论分析。两种来源均按笔记及已保存评论区计篇，旧浏览器样本不当成完整评论区。不得自动改数据来源、提高费用或回退浏览器。', {
     collectionSource: { type: 'string', enum: ['browser', 'socialdatax'], description: '使用面板配置；只有用户明确要求才更改' },
     apiBudgetYuan: { type: 'number', description: '本轮数据费用上限（元），默认使用配置；仅用户明确要求才提高' },
-    discussionAnalysisLimit: { type: 'integer', description: 'API材料本轮分析内容上限，默认500；模型另收费' },
+    discussionNoteLimit: { type: 'integer', description: '本轮整篇分析上限，默认5篇；含各篇已保存评论，模型另收费' },
     keywords: { type: 'array', items: { type: 'string' }, description: '搜索词，不传时使用面板配置' },
     urls: { type: 'array', items: { type: 'string' }, description: '小红书笔记链接；提供时默认只采集这些链接' },
     excludeSeen: { type: 'boolean', description: '默认true，跳过历史成功采集的笔记；false可更新正文和新评论' },

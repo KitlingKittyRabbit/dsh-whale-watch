@@ -5,7 +5,8 @@ export async function loadEvaluationCases() {
   return JSON.parse(await readFile(new URL('../evaluation/cases.zh.json', import.meta.url), 'utf8'));
 }
 export function evaluationItem(sample) {
-  const item = { kind: sample.kind || 'comment', title: sample.label, text: sample.text, context: sample.context || '',
+  // Labels and expected decisions belong in the report, never in the model's surrounding note title.
+  const item = { kind: sample.kind || 'comment', title: sample.noteTitle || sample.title || '构造语境样例（未提供真实标题）', text: sample.text, context: sample.context || '',
     coverage: { source: 'synthetic-evaluation', imagesUnread: false, parentMissing: false, textTruncated: false, ...sample.coverage } };
   item.contentHash = hash(JSON.stringify(item));
   return item;

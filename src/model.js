@@ -23,7 +23,7 @@ export class DshModel {
     }));
     return { current, providers: models, mode: 'dsh' };
   }
-  cacheKey(item, settings) { const key = [item.contentHash, item.context, item.vision, item.coverage, settings.rules, this.selection(settings), 'prompt-v6-group-respect']; if (settings.backgroundContext) key.push(settings.backgroundContext.hash, !!item.backgroundExpanded); if (settings.discussionHash) key.push(settings.discussionHash, 'discussion-v1'); return hash(JSON.stringify(key)); }
+  cacheKey(item, settings) { const key = [item.contentHash, item.context, item.vision, item.coverage, settings.rules, this.selection(settings), 'prompt-v7-contextual-behavior']; if (settings.backgroundContext) key.push(settings.backgroundContext.hash, !!item.backgroundExpanded); if (settings.discussionHash) key.push(settings.discussionHash, 'discussion-v1'); return hash(JSON.stringify(key)); }
   visionSelection(settings) {
     return settings.visionProvider ? { provider: settings.visionProvider, model: settings.visionModel } : this.selection(settings);
   }
@@ -156,6 +156,6 @@ export class DshModel {
       result.verification = { ...verified, proposedCategories: proposed.categories, proposedReason: proposed.reason, proposedFindings: proposed.findings, route, usage: check.usage || null };
     }
     const evidenceSources = result.evidence.map(quote => item.text.includes(quote) ? '正文' : item.kind === 'note' && item.title?.includes(quote) ? '标题' : `配图${item.vision?.pages?.find(p => p.text.includes(quote))?.index || '?'}机器识别文字，须核对原图`);
-    return { ...result, evidenceSources, backgroundUsed: settings.backgroundContext ? { id: settings.backgroundContext.id, hash: settings.backgroundContext.hash, articlesRead: settings.backgroundContext.readings.length, sourceRefs: JSON.parse(input).background.environment.references.map(r => r.ref), expanded: !!item.backgroundExpanded } : null, policyVersion: 'community-environment-v6', route, analyzedAt: new Date().toISOString(), usage: usage || null };
+    return { ...result, evidenceSources, backgroundUsed: settings.backgroundContext ? { id: settings.backgroundContext.id, hash: settings.backgroundContext.hash, articlesRead: settings.backgroundContext.readings.length, sourceRefs: JSON.parse(input).background.environment.references.map(r => r.ref), expanded: !!item.backgroundExpanded } : null, policyVersion: 'community-environment-v7', route, analyzedAt: new Date().toISOString(), usage: usage || null };
   }
 }

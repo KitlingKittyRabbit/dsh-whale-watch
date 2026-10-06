@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Store, defaultSettings } from '../src/store.js';
+import { Store, defaultSettings, hash } from '../src/store.js';
 import { PatrolEngine } from '../src/engine.js';
 import { DshModel } from '../src/model.js';
 import { backgroundInput } from '../src/background.js';
 import { createCommunityBackground } from '../src/community-background.js';
-import { GROUP_RESPECT_GUIDE } from '../src/rules.js';
+import { GROUP_RESPECT_GUIDE, CONTEXTUAL_BEHAVIOR_GUIDE } from '../src/rules.js';
 import { parseAnalysis } from '../src/schema.js';
 
 for (const verdict of ['supported', 'unsupported']) {
@@ -40,6 +40,54 @@ for (const verdict of ['supported', 'unsupported']) {
 test('旧群体标签兼容不放宽引文归属检查', () => {
   const result = { targetQuote: '好', interpretation: '回应', decision: 'review', categories: ['群体敌意'], reason: '测试', evidence: ['上级说的话'], findings: [{ category: '群体敌意', quote: '上级说的话', target: '画师群体', behavior: '测试' }], uncertainties: [], confidence: .8 };
   assert.throws(() => parseAnalysis(JSON.stringify(result), { kind: 'comment', text: '好', context: '上级说的话' }), /不符/);
+});
+
+for (const [text, category, target, context] of [
+  ['午八分钱', '人身攻击', '子午或被直接回复的讨论者', '回复正在讨论子午公开回应的评论者，没有价格话题。'],
+  ['xyy乙游模板男别来沾点', '普通创作区引战', '普通鲸鱼娘绘画评论区', '所属笔记只邀请看自己画的大肥鱼，没有邀请阵营争执。'],
+  ['没动过几次画笔的人不配评价', '群体不尊重或地图炮', '普通非画师批评者', '作者按绘画经历排斥圈外人的评价资格，没有回应具体技术论证。'],
+]) {
+  test(`语境补充同时进入初判和复核，保留目标原文：${text}`, async () => {
+    const calls = [], finding = { category, quote: text, target, behavior: '原文表达的侮辱、创作区引战或资格排斥' };
+    const item = { kind: 'comment', text, title: '构造语境校准样例', context, coverage: {} };
+    const model = new DshModel({ agentDefaultModel: { currentSelection: () => ({ provider: 'fixture', model: 'text' }) }, llm: {
+      stream: options => (async function* () {
+        calls.push(options);
+        const value = calls.length === 1 ? { targetQuote: text, interpretation: '结合回复关系解释本条', decision: 'review', categories: [category], reason: '依原文检查', evidence: [text], findings: [finding], uncertainties: [], confidence: .8 }
+          : { verdict: 'supported', reason: '同一语境下依据属于目标作者', findings: [finding] };
+        yield { type: 'text-delta', index: 0, text: JSON.stringify(value) }; yield { type: 'finish', reason: { kind: 'stop' } };
+      })(),
+    } });
+    const result = await model.analyze(item, defaultSettings());
+    assert.equal(result.decision, 'review'); assert.equal(result.policyVersion, 'community-environment-v7');
+    assert.equal(calls.length, 2); for (const call of calls) assert.ok(call.system.includes(CONTEXTUAL_BEHAVIOR_GUIDE));
+    const inputs = calls.map(call => JSON.parse(call.messages[0].content[0].text));
+    assert.equal(inputs[0].target.text, text); assert.deepEqual(inputs[1].background, inputs[0].background);
+  });
+}
+
+test('缩写可以解释但不能扩写为虚假原文证据，版本补充变化使旧判断失效', () => {
+  const item = { kind: 'comment', text: 'xyy', context: '这是辱骂回复', coverage: {}, contentHash: 'same' };
+  const bad = { targetQuote: 'xyy', interpretation: '侮辱性使用性压抑缩写', decision: 'review', categories: ['人身攻击'], reason: '测试', evidence: ['性压抑'], findings: [{ category: '人身攻击', quote: '性压抑', target: '被回复者', behavior: '辱骂' }], uncertainties: [], confidence: .8 };
+  assert.throws(() => parseAnalysis(JSON.stringify(bad), item), /不符/);
+  const model = new DshModel({ agentDefaultModel: { currentSelection: () => ({ provider: 'fixture', model: 'text' }) } });
+  const engine = new PatrolEngine({ data: { items: [item], settings: defaultSettings(), background: {} } }, {}, model);
+  item.analysis = { decision: 'normal' }; item.analysisKey = hash(JSON.stringify([item.contentHash, item.context, item.vision, item.coverage, defaultSettings().rules, model.selection(defaultSettings()), 'prompt-v6-group-respect'])); assert.equal(engine.isStale(item), true);
+});
+
+test('复核可以保留创作区引战，同时撤回从虚构拟人臆推其爱好者的额外指控', async () => {
+  const text = 'xyy乙游模板男别来沾点';
+  const creative = { category: '普通创作区引战', quote: text, target: '普通绘画评论区', behavior: '强搬另一拟人的争端' };
+  const speculative = { category: '群体不尊重或地图炮', quote: text, target: '男性拟人爱好者', behavior: '臆推爱好者都性压抑' };
+  let calls = 0;
+  const model = new DshModel({ agentDefaultModel: { currentSelection: () => ({}) }, llm: { stream: options => (async function* () {
+    calls++; assert.ok(options.system.includes(CONTEXTUAL_BEHAVIOR_GUIDE));
+    const output = calls === 1 ? { targetQuote: text, interpretation: '在普通绘画下攻击另一拟人', decision: 'review', categories: [creative.category, speculative.category], reason: '初判可能过度归因', evidence: [text], findings: [creative, speculative], uncertainties: [], confidence: .8 }
+      : { verdict: 'supported', reason: '成立的是创作区引战，没有现实爱好者群体被指称的依据', findings: [creative] };
+    yield { type: 'text-delta', index: 0, text: JSON.stringify(output) }; yield { type: 'finish', reason: { kind: 'stop' } };
+  })() } });
+  const result = await model.analyze({ kind: 'comment', text, context: '普通鲸鱼娘绘画展示，没有阵营讨论', coverage: {} }, defaultSettings());
+  assert.deepEqual(result.categories, [creative.category]); assert.deepEqual(result.findings, [creative]); assert.equal(calls, 2);
 });
 
 for (const category of ['普通创作区引战', '牵连无关角色或圈子']) {

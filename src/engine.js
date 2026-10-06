@@ -8,6 +8,7 @@ import { backgroundStartSchema, backgroundUpdateSchema, readingMaterial, backgro
 
 import { communityBackgroundInfo, createCommunityBackground } from './community-background.js';
 import { discussionRecords, discussionHash, DISCUSSION_BATCH_SIZE } from './discussion.js';
+import { CONTEXTUAL_BEHAVIOR_GUIDE } from './rules.js';
 
 export class PatrolEngine {
   constructor(store, browser, model, apiCollector = null) { this.store = store; this.browser = browser; this.model = model; this.apiCollector = apiCollector; this.active = null; }
@@ -19,7 +20,7 @@ export class PatrolEngine {
     const data = this.store.data;
     const unread = data.items.filter(i => !i.readAt);
     const classified = unread.filter(i => i.analysis && !this.isStale(i));
-    return { settings: data.settings, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
+    return { settings: data.settings, policy: { version: 'community-environment-v7', contextGuide: CONTEXTUAL_BEHAVIOR_GUIDE }, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: data.items.length, unread: unread.length, read: data.items.length - unread.length, review: classified.filter(i => i.analysis.decision === 'review').length,
       suspicious: classified.filter(i => i.analysis.decision === 'review').length,
       other: classified.filter(i => i.analysis.decision !== 'review').length,

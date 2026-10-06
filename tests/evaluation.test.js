@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadEvaluationCases, summarizeEvaluation } from '../src/evaluation.js';
+import { loadEvaluationCases, summarizeEvaluation, evaluationItem } from '../src/evaluation.js';
 import { PatrolEngine } from '../src/engine.js';
 import { Store } from '../src/store.js';
 
@@ -25,7 +25,7 @@ test('评估遵守分析额度，不污染巡查记录；报告保存实际错�
   await engine.start({ maxAnalysis: 3 }, 'evaluate'); await engine.active.promise;
   assert.equal(calls, 3); assert.equal(engine.store.data.items.length, 0);
   assert.equal(engine.evaluation().complete, false); assert.equal(engine.evaluation().summary.errors, 1);
-  assert.equal(engine.evaluation().summary.unattempted, 29); assert.equal(engine.evaluation().rows[1].error, 'model timeout');
+  assert.equal(engine.evaluation().summary.unattempted, 37); assert.equal(engine.evaluation().rows[1].error, 'model timeout');
 });
 test('停止评估保留部分报告，不伪称全部完成', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'patrol-eval-stop-')); t.after(() => rm(dir, { recursive: true, force: true }));
@@ -39,6 +39,14 @@ test('停止评估保留部分报告，不伪称全部完成', async t => {
 });
 test('公开样例覆盖正常、复核、缺失语境，编号唯一', async () => {
   const fixture = await loadEvaluationCases();
-  assert.equal(fixture.cases.length, 32); assert.equal(new Set(fixture.cases.map(c => c.id )).size, 32);
+  assert.equal(fixture.cases.length, 40); assert.equal(new Set(fixture.cases.map(c => c.id )).size, 40);
   assert.deepEqual(new Set(fixture.cases.map(c => c.expected)), new Set(['normal', 'review', 'uncertain']));
+});
+
+test('样例标签、预期和作者判据不会通过标题或原文泄漏给模型', () => {
+  const base = { text: '我反对这项设计', context: '作者主动讨论作品设计' };
+  const attack = evaluationItem({ ...base, label: '必须判可疑', expected: 'review', why: '评估作者的标注' });
+  const normal = evaluationItem({ ...base, label: '正常讨论', expected: 'normal', why: '另一份标注' });
+  assert.deepEqual(attack, normal); assert.equal(JSON.stringify(attack).includes('必须判可疑'), false);
+  assert.equal(evaluationItem({ ...base, noteTitle: '真实提供的笔记标题', label: '报告标签' }).title, '真实提供的笔记标题');
 });

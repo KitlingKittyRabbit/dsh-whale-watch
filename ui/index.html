@@ -4,24 +4,24 @@
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.8.0</small></strong></div>
-    <nav aria-label="主导航"><button class="nav active" data-tab="results">巡查结果<span>↗</span></button><button class="nav" data-tab="context">背景与术语<span>≡</span></button><button class="nav" data-tab="import">导入文字<span>＋</span></button><button class="nav" data-tab="settings">规则与设置<span>⚙</span></button></nav>
+    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.8.1</small></strong></div>
+    <nav aria-label="主导航"><button class="nav active" data-tab="results">巡查<span>↗</span></button><button class="nav" data-tab="context">专题<span>≡</span></button><button class="nav" data-tab="settings">设置<span>⚙</span></button></nav>
     <div class="aside-note"><span class="dot"></span>本机工作台<p>发现具体言行<br>保留原文与上下文<br>看完点击已阅</p></div>
     <a class="back" href="/">← 回到 DSH</a>
   </aside>
   <main>
-    <header><div><p class="eyebrow">维护讨论环境，从看清原文开始</p><h1 id="page-title">巡查结果</h1></div><a class="export" href="/plugins/dafeiyu-patrol/api/export" download>导出记录 ↓</a></header>
+    <header><div><p class="eyebrow">维护讨论环境，从看清原文开始</p><h1 id="page-title">巡查</h1></div><a class="export" href="/plugins/dafeiyu-patrol/api/export" download>导出记录 ↓</a></header>
     <div id="notice" class="notice" role="status" hidden></div>
     <section id="tab-results">
       <div class="stats"><div><span>未阅讨论</span><strong id="count-total">0篇</strong><span id="count-total-entries">0条</span></div><div><span>可疑</span><strong id="count-suspicious">0篇</strong><span id="count-suspicious-entries">0条</span></div><div><span>其它</span><strong id="count-other">0篇</strong><span id="count-other-entries">0条</span></div><div><span>待分析</span><strong id="count-pending">0篇</strong><span id="count-pending-entries">0条</span></div></div>
       <p class="hint">一条指一篇正文或一条评论；各项统计未阅条目及包含该类条目的篇数，同一篇可含多类内容，篇数不互斥。待分析包括失败项。</p><p id="analysis-failures" class="pending-summary" hidden></p>
-      <section class="box"><h2>采集记录管理</h2><p class="hint">清空正文、评论、分析、已阅记录、巡查任务和已查缓存；保留模型、规则、背景和密钥，可撤销。</p><div class="actions"><button id="clear-collection">清空采集记录</button><button id="restore-collection" hidden>撤销清空采集记录</button></div></section>
+      <details class="box"><summary>记录管理</summary><p class="hint">清空正文、评论、分析、已阅记录、巡查任务和已查缓存；保留模型、规则、背景和密钥，可撤销。</p><div class="actions"><button id="clear-collection">清空采集记录</button><button id="restore-collection" hidden>撤销清空采集记录</button></div></details>
       <section class="scan box"><div class="section-head"><h2>发起一次巡查</h2><span id="model-current" class="muted">读取 DSH 模型配置…</span></div>
         <label>关键词<input id="keywords" placeholder="大肥鱼，DeepSeek拟人"></label>
-        <div id="search-options" class="grid-two"></div><button id="save-search-options">保存搜索选项为默认</button><p class="hint">选择用于下一次巡查；保存为默认后刷新也保留。指定链接时笔记排序、时间与类型筛选不适用，评论排序仍有效；分析未阅不会重新搜索。视频只读取文字、配图与评论，不识别视频画面或音频。多个关键词依次搜索，找到本轮数量即停止。</p>
+        <details><summary>搜索选项</summary><div id="search-options" class="grid-two"></div><button id="save-search-options">保存搜索选项为默认</button><p class="hint">选择用于下一次巡查；保存为默认后刷新也保留。指定链接时笔记排序、时间与类型筛选不适用，评论排序仍有效；分析未阅不会重新搜索。视频只读取文字、配图与评论，不识别视频画面或音频。多个关键词依次搜索，找到本轮数量即停止。</p>
         <details><summary>或指定笔记链接</summary><label>每行一个链接<textarea id="urls" rows="3" placeholder="https://www.xiaohongshu.com/explore/…"></textarea></label></details>
         <label><input id="exclude-seen" type="checkbox" checked>排除已查过的笔记</label><p class="hint">只读取新笔记；要更新旧帖正文或新评论，请取消勾选。未读成功的笔记仍可重试。</p>
-        <div class="actions"><span id="seen-cache-count" class="muted"></span><button id="clear-seen-cache">清空已查缓存</button><button id="restore-seen-cache" hidden>撤销上次清理</button></div><p class="hint">清空后旧帖可再次查找，原文、分析和复核保留。相同文字仍复用已有分析。</p>
+        <div class="actions"><span id="seen-cache-count" class="muted"></span><button id="clear-seen-cache">清空已查缓存</button><button id="restore-seen-cache" hidden>撤销上次清理</button></div><p class="hint">清空后旧帖可再次查找，原文和结果保留。</p></details>
         <div class="actions"><button id="start" class="primary">开始巡查 →</button><button id="analyze">分析未阅讨论</button><button id="stop" class="danger" hidden>停止任务</button><button id="resume" hidden>继续任务</button></div>
         <p id="limits" class="hint"></p><p class="hint">浏览器自动采集已停用。仅使用数据 API 或导入原文；配图保存和机器识别请从 DSH 侧栏巡查面板查看。</p>
       </section>
@@ -29,16 +29,21 @@
       <div class="result-heading"><h2>内容记录</h2><span id="result-total" class="muted"></span></div>
       <div class="filters" role="group" aria-label="筛选结果"><button data-filter="all" class="selected">未阅</button><button data-filter="suspicious">可疑</button><button data-filter="other">其它</button><button data-filter="unanalyzed">待分析篇目</button><button data-filter="read">已阅</button></div>
       <div id="results" aria-live="polite"></div><div id="pager" class="pager" hidden><button id="prev">← 上一页</button><span id="page-number"></span><button id="next">下一页 →</button></div>
-    </section>
-    <section id="tab-context" hidden><div class="box"><h2>专题配置：背景、黑话与术语</h2><p id="context-current"></p><p class="hint">导入一起替换背景与术语，可撤销；记录、判断规则和旧结论保留，不启动采集或模型调用。文件不包含密钥或预算。</p>
-      <div class="actions"><button id="context-builtin">导入内置DS拟人争议配置</button><a href="/plugins/dafeiyu-patrol/api/context/builtin/export" download>下载DS配置</a><a href="/plugins/dafeiyu-patrol/api/context/export" download>导出当前配置</a><a href="/plugins/dafeiyu-patrol/api/context/template" download>下载空白模板</a></div>
-      <label>选择专题JSON文件<input type="file" id="context-file" accept=".json,application/json"></label><label>配置JSON<textarea id="context-json" rows="10" maxlength="300000"></textarea></label><div class="actions"><button id="context-validate">仅校验格式</button><button id="context-import" class="primary">校验并导入配置</button><button id="context-undo" hidden>撤销上次专题切换</button><button id="context-unload" hidden>卸下专题及背景</button></div>
-      <p class="hint">DSH对话的模式选择中，选“鲸声守望配置制作助手”，提供材料生成草稿；模型整理另计调用，保存与导入本身不调用模型。完整背景查看和修改请使用DSH侧栏面板。</p><div id="context-draft" hidden><p id="context-draft-name"></p><a href="/plugins/dafeiyu-patrol/api/context/draft/export" download>下载配置草稿</a><button id="context-apply-draft">导入这份草稿</button></div><details><summary>当前术语解释</summary><div id="context-terms"></div></details></div></section>
-    <section id="tab-import" hidden>
+
+    <details class="box"><summary>导入原文</summary>
       <div class="box"><p class="eyebrow">不需要登录，也能先试判断效果</p><h2>导入一段原文</h2><p class="hint">适合粘贴笔记、评论或用示例校准规则。导入内容会发送到所选模型服务。</p>
         <form id="import-form"><label>类型<select id="import-kind"><option value="comment">评论</option><option value="note">笔记</option></select></label><label>标题<input id="import-title" placeholder="手动导入"></label><label>原文<textarea id="import-text" rows="7" required placeholder="粘贴需要分析的原文…"></textarea></label><label>上下文<textarea id="import-context" rows="4" placeholder="上级评论、所属笔记，或说明这句话是在引用或反驳谁…"></textarea></label><label>原帖链接（可选）<input id="import-url" placeholder="小红书笔记链接"></label><div class="actions"><button class="primary" type="submit">导入并分析 →</button><button id="sample" type="button">填入一条示例</button></div></form>
       </div>
+    </details>
     </section>
+    <section id="tab-context" hidden><div class="box"><h2 id="context-current">专题</h2><p class="hint">背景和术语帮助 AI 理解讨论；判断标准在“设置”中。</p>
+      <div class="actions"><button id="context-switch">更换专题</button><button id="context-edit">编辑资料</button><button id="context-builder" class="primary">让 AI 制作</button></div>
+      <div id="context-switch-panel" hidden><button id="context-builtin">使用内置 DS 拟人争议</button><label>导入专题文件<input type="file" id="context-file" accept=".json,application/json"></label><p class="hint">选择后自动检查并载入。</p></div>
+      <form id="context-editor" hidden><label>专题名称<input id="context-name" required maxlength="100"></label><label>背景说明<textarea id="context-memo" rows="10" maxlength="24000"></textarea></label><h3>术语解释</h3><div id="context-term-editor"></div><button type="button" id="context-add-term">添加术语</button><div class="actions"><button class="primary" type="submit">保存资料</button><button type="button" id="context-cancel">取消</button></div></form>
+      <div id="context-draft" hidden><h3 id="context-draft-name"></h3><button id="context-preview-draft">查看草稿</button><button class="primary" id="context-apply-draft">采用这份配置</button><div id="context-draft-preview" hidden></div></div>
+      <div id="context-material"></div>
+      <details><summary>更多</summary><div class="actions"><a href="/plugins/dafeiyu-patrol/api/context/export" download>导出专题文件</a><button id="context-undo" hidden>撤销上次修改</button><button id="context-unload" hidden>卸下专题</button></div></details>
+    </div></section>
     <section id="tab-settings" hidden>
       <form id="settings-form"><div class="box"><h2>模型与扫描范围</h2><p class="hint">默认复用 DSH 的模型和凭据。这里只选择模型，不保存 API 密钥。</p><div class="grid-two"><label>模型服务<select id="provider"><option value="">跟随 DSH 默认模型</option></select></label><label>分析模型<select id="model"><option value="">跟随默认模型</option></select></label></div><div class="grid-three"><label>每轮笔记上限<input id="maxNotes" type="number" min="1" max="30" required></label><label hidden>旧评论采样上限<input id="maxComments" type="number" min="0" max="50" required></label><label>单独导入及示例分析上限<input id="maxAnalysis" type="number" min="1" max="100" required></label></div><p class="hint">分析上限限制调用条数，每条回复最多8,192 token（思考也可能计入）。失败调用也占用额度；相同内容、规则和模型复用已保存的结果。</p></div>
       <div class="box"><h2>判断规则</h2><p class="hint">规则用于识别具体言行。修改用于后续分析，旧结论保留；需要重算时在对应篇目点击“重新分析整篇”。</p><label class="sr-only" for="rules">判断规则</label><textarea id="rules" rows="15" required></textarea></div><div class="actions"><button class="primary" type="submit">保存设置</button></div></form>

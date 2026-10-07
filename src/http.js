@@ -53,6 +53,7 @@ export function createHandler(engine) {
           res.setHeader('content-disposition', `attachment; filename="${config.id}.json"`);
           return send(res, 200, config);
         }
+        if (route === '/api/context/document') return send(res, 200, engine.contextDocument());
         if (route === '/api/context') return send(res, 200, engine.context());
         if (route === '/api/status') return send(res, 200, engine.state());
         if (route === '/api/models') return send(res, 200, await engine.model.catalog());
@@ -72,6 +73,7 @@ export function createHandler(engine) {
         const origin = req.headers.origin;
         if (!origin || new URL(origin).host !== req.headers.host || req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: '操作必须从巡查面板发起' });
         const data = await body(req);
+        if (route === '/api/context/edit') return send(res, 200, await engine.editContext(data));
         if (route === '/api/context/import') return send(res, 200, await engine.importContext(data));
         if (route === '/api/context/builtin') return send(res, 200, await engine.useBuiltinContext());
         if (route === '/api/context/validate') return send(res, 200, engine.validateContext(data));
@@ -80,8 +82,7 @@ export function createHandler(engine) {
         if (route === '/api/context/unload') return send(res, 200, await engine.unloadContext());
         if (route === '/api/context/undo') return send(res, 200, await engine.undoContext());
         if (route === '/api/background/preset') return send(res, 200, await engine.useCommunityBackground());
-        if (route === '/api/background/start') return send(res, 200, await engine.startBackground(data));
-        if (route === '/api/background/update') return send(res, 200, await engine.updateBackground(data));
+        if (['/api/background/start', '/api/background/update'].includes(route)) return send(res, 410, { error: '旧背景阅读入口已停用，请到专题页编辑资料或让 AI 制作配置' });
         if (route === '/api/settings') return send(res, 200, await engine.settings(data));
         if (route === '/api/data-key') return send(res, 200, await engine.dataKey(data));
         if (route === '/api/login' || route === '/api/source') return send(res, 410, { error: BROWSER_DISABLED_MESSAGE });

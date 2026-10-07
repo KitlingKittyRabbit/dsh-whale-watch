@@ -11,3 +11,8 @@
 .patrol-running-task h2{font-size:20px;color:var(--patrol-ink)}.patrol-running-heading{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.patrol-spinner{display:inline-block;width:22px;height:22px;flex-shrink:0;border:3px solid #6b91da;border-right-color:transparent;border-radius:50%;animation:patrol-spin 1s linear infinite}.patrol-running-badge{font-size:12px;color:#fff;background:#416fac;padding:3px 10px;border-radius:20px;font-weight:500}.patrol-running-explainer{font-size:13px;color:var(--patrol-muted)}@keyframes patrol-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.patrol-spinner{animation:none}}
 
 .patrol-pending-summary{border:1px solid #b88a45;border-left:4px solid #b88a45;border-radius:10px;padding:10px 14px;margin:14px 0;background:color-mix(in srgb,#b88a45 8%,var(--patrol-bg))}
+
+.patrol-native .patrol-topic-section{margin-top:20px;padding-top:18px;border-top:1px solid var(--patrol-border,#dde2eb)}
+.patrol-native .patrol-topic-term{padding:16px 0;border-bottom:1px solid var(--patrol-border,#dde2eb)}
+.patrol-native .patrol-topic-more{margin-top:24px}
+.patrol-native .patrol-topic-actions{margin-bottom:16px}

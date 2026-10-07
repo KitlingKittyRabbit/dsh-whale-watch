@@ -1,6 +1,7 @@
 const BASE = '/plugins/dafeiyu-patrol/api';
 const $ = id => document.getElementById(id);
 let state, catalog, filter = 'all', offset = 0, total = 0, activeTab = 'results', lastResults = '', initialized = false;
+let topicEditing = null, materialHash = null, topicLoading = false;
 const pageSize = 20;
 const names = { normal: '其它', review: '可疑', uncertain: '其它' };
 const statuses = { running: '正在巡查', completed: '任务完成', partial: '部分完成', paused: '等待你处理', failed: '任务未完成', cancelled: '已停止', interrupted: '上次任务中断' };
@@ -15,9 +16,9 @@ const split = text => text.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
 function el(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
 function tab(name) {
   activeTab = name;
-  for (const t of ['results', 'settings', 'import', 'context']) $('tab-' + t).hidden = t !== name;
+  for (const t of ['results', 'settings', 'context']) $('tab-' + t).hidden = t !== name;
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === name));
-  $('page-title').textContent = { results: '巡查结果', settings: '规则与设置', import: '导入文字', context: '背景与术语' }[name];
+  $('page-title').textContent = { results: '巡查', settings: '设置', context: '专题' }[name];
 }
 function fillModels() {
   const provider = $('provider').value;
@@ -62,7 +63,7 @@ async function refresh() {
     const route = s.provider ? s : catalog.current;
     $('model-current').textContent = catalog.mode === 'offline' ? '独立预览：请在 DSH 内使用模型分析' : `分析模型：${route.provider} / ${route.model}`;
   }
-  $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 每篇 ${s.maxComments} 条可见评论 · ${s.discussionNoteLimit} 篇整篇分析。结果按当前搜索排序读取。`;
+  $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 评论及回复自动分页读取，受费用上限限制 · ${s.discussionNoteLimit} 篇整篇分析。结果按当前搜索排序读取。`;
   const running = !!state.activeJob;
   $('job-box').classList.toggle('running', running);
   $('job-spinner').hidden = !running; $('job-live-badge').hidden = !running; $('job-waiting').hidden = !running;
@@ -100,7 +101,7 @@ async function refreshResults(force = false) {
   $('results').replaceChildren();
   if (!result.items.length) {
     const empty = el('div', undefined, 'empty');
-    empty.append(el('div', '◡', 'symbol'), el('strong', total ? '这一页没有记录' : '这里还没有内容'), el('p', state.counts.total ? '切换筛选条件查看其他记录。' : '配置数据 API 发起一次巡查，或在“导入文字”中试一段原文。'));
+    empty.append(el('div', '◡', 'symbol'), el('strong', total ? '这一页没有记录' : '这里还没有内容'), el('p', state.counts.total ? '切换筛选条件查看其他记录。' : '配置数据 API 发起一次巡查，或展开“导入原文”试一段文字。'));
     $('results').append(empty);
   }
   for (const item of result.items) $('results').append(card(item));
@@ -205,13 +206,57 @@ $('restore-collection').addEventListener('click', () => action($('restore-collec
 
 function renderContext() {
   const c = state.context, running = !!state.activeJob;
-  $('context-current').textContent = c.active ? `当前：${c.active.name} · ${c.active.glossary.length}个术语` : '尚未载入专题配置';
+  $('context-current').textContent = c.active?.name || '选择一个专题';
   $('context-undo').hidden = !c.canUndo; $('context-unload').hidden = !c.active && !c.hasBackground;
-  for (const id of ['context-builtin', 'context-file', 'context-json', 'context-import', 'context-validate', 'context-undo', 'context-unload', 'context-apply-draft']) $(id).disabled = running;
-  $('context-draft').hidden = !c.draft; $('context-draft-name').textContent = c.draft ? `待导入草稿：${c.draft.name} · ${c.draft.terms}个术语` : '';
-  $('context-terms').replaceChildren(...(c.active?.glossary || []).map(t => { const entry = el('div'); entry.append(el('strong', t.term), el('p', t.meaning), el('p', t.usageNotes, 'hint')); return entry; }));
+  for (const id of ['context-switch', 'context-edit', 'context-builtin', 'context-file', 'context-undo', 'context-unload', 'context-apply-draft']) $(id).disabled = running;
+  $('context-draft').hidden = !c.draft; $('context-draft-name').textContent = c.draft ? `AI 草稿：${c.draft.name} · ${c.draft.terms} 个术语` : '';
+  const hash = c.active?.hash || 'none';
+  if (!topicLoading && hash !== materialHash) {
+    topicLoading = true;
+    api('/context/document').then(doc => {
+      const root = $('context-material'); root.replaceChildren(el('h3', '背景'), el('p', doc.config.background.memo || '还没有背景说明。', 'raw'));
+      const terms = el('details'); terms.append(el('summary', `术语解释（${doc.config.glossary.length} 个）`));
+      for (const term of doc.config.glossary) terms.append(el('strong', term.term), el('p', term.meaning), el('p', term.usageNotes, 'hint'));
+      root.append(terms); materialHash = hash;
+    }).catch(e => notice(e.message, true)).finally(() => { topicLoading = false; });
+  }
 }
-async function contextAction(path, data = {}) { try { const out = await api('/context/' + path, data); notice(out.message); await refresh(); } catch (e) { notice(e.message, true); } }
-$('context-file').addEventListener('change', async e => { try { const file = e.target.files[0]; if (!file) return; if (file.size > 300000) throw new Error('配置文件不能超过300 KB'); $('context-json').value = await file.text(); notice(`已读取 ${file.name}，尚未导入。`); } catch (error) { notice(error.message, true); } e.target.value = ''; });
-for (const [id, action] of [['context-builtin', 'builtin'], ['context-undo', 'undo'], ['context-unload', 'unload'], ['context-apply-draft', 'apply-draft']]) $(id).addEventListener('click', () => contextAction(action));
-for (const action of ['validate', 'import']) $('context-' + action).addEventListener('click', () => { try { const config = JSON.parse($('context-json').value); contextAction(action, { config }); } catch (e) { notice('JSON无法读取：' + e.message, true); } });
+async function contextAction(path, data = {}) {
+  try { const out = await api('/context/' + path, data); notice(out.message); materialHash = null; await refresh(); return out; }
+  catch (e) { notice(e.message, true); }
+}
+$('context-switch').addEventListener('click', () => { $('context-switch-panel').hidden = !$('context-switch-panel').hidden; });
+$('context-file').addEventListener('change', async e => {
+  try { const file = e.target.files[0]; if (!file) return; if (file.size > 300000) throw new Error('配置文件不能超过300 KB'); if (await contextAction('import', { configJson: await file.text() })) $('context-switch-panel').hidden = true; }
+  catch (error) { notice(error.message, true); } e.target.value = '';
+});
+for (const [id, action] of [['context-builtin', 'builtin'], ['context-undo', 'undo'], ['context-unload', 'unload'], ['context-apply-draft', 'apply-draft']]) $(id).addEventListener('click', async () => {
+  if (await contextAction(action)) { $('context-switch-panel').hidden = true; $('context-editor').hidden = true; topicEditing = null; }
+});
+$('context-builder').addEventListener('click', () => notice('请从 DSH 左侧“鲸声守望 → 专题”打开制作助手。当前是独立预览页面。'));
+$('context-preview-draft').addEventListener('click', async () => {
+  const root = $('context-draft-preview'); if (!root.hidden) { root.hidden = true; return; }
+  try { const doc = await api('/context/draft/export'); root.replaceChildren(el('p', doc.background.memo, 'raw'), ...doc.glossary.map(t => el('p', t.term + '：' + t.meaning))); root.hidden = false; } catch (e) { notice(e.message, true); }
+});
+function termForm() {
+  const root = $('context-term-editor'); root.replaceChildren();
+  topicEditing.config.glossary.forEach((term, index) => {
+    const row = el('div');
+    for (const [key, title] of [['term', '术语'], ['aliases', '别名（逗号分隔）'], ['meaning', '含义'], ['usageNotes', '用法说明']]) {
+      const label = el('label', title), input = el(key === 'meaning' || key === 'usageNotes' ? 'textarea' : 'input');
+      input.value = key === 'aliases' ? term.aliases.join('，') : term[key]; input.required = ['term', 'meaning'].includes(key);
+      input.addEventListener('input', () => { term[key] = key === 'aliases' ? split(input.value) : input.value; }); label.append(input); row.append(label);
+    }
+    const remove = el('button', '删除此术语'); remove.type = 'button'; remove.addEventListener('click', () => { topicEditing.config.glossary.splice(index, 1); termForm(); }); row.append(remove); root.append(row);
+  });
+}
+$('context-edit').addEventListener('click', async () => {
+  try { topicEditing = await api('/context/document'); $('context-name').value = topicEditing.config.name; $('context-memo').value = topicEditing.config.background.memo; termForm(); $('context-editor').hidden = false; }
+  catch (e) { notice(e.message, true); }
+});
+$('context-add-term').addEventListener('click', () => { if (topicEditing.config.glossary.length >= 100) return; topicEditing.config.glossary.push({ term: '', aliases: [], meaning: '', usageNotes: '', status: 'source_claim', sourceRefs: [], sources: [] }); termForm(); });
+$('context-cancel').addEventListener('click', () => { $('context-editor').hidden = true; topicEditing = null; });
+$('context-editor').addEventListener('submit', async e => {
+  e.preventDefault(); topicEditing.config.name = $('context-name').value; topicEditing.config.background.memo = $('context-memo').value;
+  if (await contextAction('edit', topicEditing)) { $('context-editor').hidden = true; topicEditing = null; }
+});

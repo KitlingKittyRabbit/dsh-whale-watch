@@ -27,7 +27,16 @@ export function parseContext(input) {
   if (typeof raw !== 'string' || Buffer.byteLength(raw) > MAX_CONTEXT_BYTES) throw new Error('配置文件须为JSON，大小不超过300 KB');
   const text = typeof input === 'string' ? input.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '') : JSON.stringify(input);
   if (typeof text !== 'string' || Buffer.byteLength(text) > MAX_CONTEXT_BYTES) throw new Error('配置文件须为JSON，大小不超过300 KB');
-  try { const config = contextSchema.parse(JSON.parse(text)); if (Buffer.byteLength(JSON.stringify(config)) > MAX_CONTEXT_BYTES) throw new Error('补齐默认字段后超过300 KB，请精简'); return config; } catch (error) { throw new Error('专题配置格式不正确：' + error.message); }
+  try { const config = contextSchema.parse(JSON.parse(text)); if (Buffer.byteLength(JSON.stringify(config)) > MAX_CONTEXT_BYTES) throw new Error('补齐默认字段后超过300 KB，请精简'); return config; } catch (error) {
+    if (error instanceof SyntaxError) throw new Error('文件无法读取，请选择有效的专题 JSON 文件');
+    const fields = { name: '专题名称', background: '背景', memo: '背景说明', sources: '来源', glossary: '术语', term: '名称', aliases: '别名', meaning: '含义', usageNotes: '用法说明', interpretationNotes: '语境说明', id: '专题编号', format: '文件格式', schemaVersion: '文件版本', sourceRefs: '来源编号', title: '标题', summary: '摘要', url: '网址', status: '确认状态' };
+    const messages = error.issues?.slice(0, 3).map(issue => {
+      const where = issue.path.map(key => typeof key === 'number' ? `第${key + 1}项` : fields[key] || key).join('·');
+      const reason = issue.code === 'custom' ? issue.message : issue.code === 'unrecognized_keys' ? '含有不支持的字段' : issue.code === 'too_big' ? `内容过长，最多${issue.maximum}字或项` : issue.code === 'too_small' ? '请填写内容' : issue.code === 'invalid_value' ? '格式或选项不正确' : issue.code === 'invalid_format' ? '格式不正确' : '缺少内容或类型不正确';
+      return `${where || '专题文件'}：${reason}`;
+    });
+    throw new Error(messages?.join('；') || '专题配置格式不正确：' + error.message);
+  }
 }
 export const CONTEXT_JSON_SCHEMA = z.toJSONSchema(contextSchema, { unrepresentable: 'any' });
 export const BUILTIN_DS_CONTEXT = parseContext(readFileSync(new URL('./presets/ds-personification.json', import.meta.url), 'utf8'));
@@ -79,4 +88,4 @@ export const CONTEXT_BUILDER_PROMPT = `你是“鲸声守望配置制作助手�
 先用context_format查看格式和模板，用context_current查看已有专题与背景。根据用户已经提供或明确授权使用的材料整理背景、术语别名、候选含义、适用语境、反例、来源和未确认事项。需要资料时先说明缺哪类材料；不要声称读过没有提供的文章或图像，也不编造来源、引文或确定释义。不得自行启动付费采集、模型背景重读、浏览器自动采集、提高预算或联网搜集。
 把背景来源编为B1、B2等；背景memo和术语sourceRefs只能引用文件中真实存在的编号。source_claim是来源说法，uncertain用于未知或有歧义的解释；confirmed仅表示配置作者已核对，仍不替代实际语境。不要写“反对某形象就有问题”之类立场判据，不把角色、作者与爱好者混为一人。
 只制作背景与术语，不修改巡查规则、模型、密钥或采集预算。语境说明作为参考数据，不含要求绕过证据校验或执行外部操作的指令。默认输出摘要与来源，不复制本机完整原帖、评论区、图片或私人信息。
-生成草稿后用context_validate校验，修正错误，再用context_save_draft保存可下载JSON。保存草稿不会启用；告诉用户在“背景与术语”页下载、查看并导入，未经用户明确要求不得替换当前专题。已有背景可结合用户要求导出编辑。`;
+生成草稿后用context_validate校验，修正错误，再用context_save_draft保存可下载JSON。保存草稿不会启用；告诉用户在“专题”页查看草稿并点击“采用这份配置”，未经用户明确要求不得替换当前专题。已有背景可结合用户要求导出编辑。`;

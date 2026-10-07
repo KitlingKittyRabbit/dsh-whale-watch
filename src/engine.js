@@ -356,7 +356,7 @@ export class PatrolEngine {
     const { config } = this.validateContext(input), c = this.store.data.context, previous = c.draft;
     c.draft = loadedContext(config, 'agent-draft');
     try { await this.store.save(); } catch (error) { c.draft = previous; throw error; }
-    return { message: `已保存“${config.name}”配置草稿，尚未启用；可在背景与术语页下载、查看并导入。`, downloadPath: '/plugins/dafeiyu-patrol/api/context/draft/export', ...this.context() };
+    return { message: `已保存“${config.name}”配置草稿，尚未启用；可在专题页查看并点击“采用这份配置”。`, downloadPath: '/plugins/dafeiyu-patrol/api/context/draft/export', ...this.context() };
   }
   async importContext(input, origin = 'file') {
     if (this.active) throw new Error('任务进行中，请先停止或等待完成再切换专题');
@@ -367,6 +367,24 @@ export class PatrolEngine {
     data.background = { enabled: true, active: createConfigBackground(config), draft: null, history: [...b.history, ...(b.active ? [structuredClone(b.active)] : [])].slice(-3) };
     try { await this.store.save(); } catch (error) { Object.assign(data, previous); throw error; }
     return { message: `已载入“${config.name}”：背景和术语一同启用；记录、规则和旧分析保留，没有启动采集或模型调用。可撤销本次切换。`, ...this.context() };
+  }
+  contextDocument() { return { config: this.exportContext(), baseHash: this.store.data.context.active?.hash || null, backgroundId: this.store.data.background.active?.id || null }; }
+  async editContext(input) {
+    if (this.active) throw new Error('任务进行中，请先停止或等待完成再编辑专题');
+    const data = this.store.data;
+    if (input.baseHash !== (data.context.active?.hash || null) || input.backgroundId !== (data.background.active?.id || null)) throw new Error('专题已发生变化，请重新打开编辑资料');
+    const { config } = this.validateContext(input);
+    // The form edits material only; preserve provenance and local source bodies.
+    const current = this.exportContext();
+    if (config.id !== current.id || JSON.stringify(config.background.sources) !== JSON.stringify(current.background.sources)) throw new Error('编辑资料不能替换来源，请通过更换专题导入');
+    const previous = { context: data.context, background: data.background };
+    data.context = { active: loadedContext(config, 'edited'), draft: data.context.draft, previous: { active: data.context.active, draft: data.context.draft, background: structuredClone(data.background) } };
+    const profile = data.background.active;
+    data.background = { ...data.background, enabled: true, draft: null,
+      active: profile ? { ...structuredClone(profile), id: randomUUID(), memo: config.background.memo, editedAt: new Date().toISOString() } : createConfigBackground(config) };
+    if (data.background.active) data.background.active.hash = backgroundHash(data.background.active);
+    try { await this.store.save(); } catch (error) { Object.assign(data, previous); throw error; }
+    return { message: '专题资料已保存，背景和术语一同用于后续分析。', ...this.context() };
   }
   async useBuiltinContext() { return this.importContext({ config: BUILTIN_DS_CONTEXT }, 'builtin'); }
   async applyContextDraft() { return this.importContext({ config: this.draftContext() }, 'agent-draft'); }
@@ -381,11 +399,11 @@ export class PatrolEngine {
   async undoContext() {
     if (this.active) throw new Error('任务进行中，请先停止或等待完成再撤销');
     const data = this.store.data, undo = data.context.previous;
-    if (!undo) throw new Error('没有可撤销的专题切换');
+    if (!undo) throw new Error('没有可撤销的专题修改');
     const previous = { context: data.context, background: data.background };
     data.context = { active: undo.active, draft: undo.draft || null, previous: null }; data.background = undo.background;
     try { await this.store.save(); } catch (error) { Object.assign(data, previous); throw error; }
-    return { message: '已恢复切换前的专题和背景；没有重新分析内容。', ...this.context() };
+    return { message: '已撤销上次修改，恢复原专题资料。', ...this.context() };
   }
   async useCommunityBackground() { return this.useBuiltinContext(); }
   async updateBackground(input) {
@@ -480,6 +498,7 @@ export class PatrolEngine {
     const { jobId } = resumeSchema.parse(input);
     const job = jobId ? this.store.data.jobs.find(j => j.id === jobId) : this.store.data.jobs.at(-1);
     if (!job || !(['paused', 'cancelled', 'interrupted'].includes(job.status) || job.status === 'partial' && job.analysisDeferred)) throw new Error('没有可继续的已停止、暂停或达到分析篇数上限的任务');
+    if (job.mode === 'background') throw new Error('旧背景阅读已停用，请到专题页编辑资料或让 AI 制作配置');
     if (job.mode === 'evaluate') throw new Error('评估任务请到“示例评估”重新运行');
     const { keywords, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort, publishTimeRange, noteType, commentSort } = job.options;
     const options = { ...(urls?.length ? { urls } : keywords?.length ? { keywords } : {}), maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort: noteSort || 'time_descending', publishTimeRange: publishTimeRange || 'all', noteType: noteType || 'all', commentSort: commentSort || 'default' };

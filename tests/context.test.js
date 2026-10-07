@@ -121,3 +121,40 @@ test('配置HTTP下载为可重新导入的JSON，同源与坏配置保护生效
   const builtin = await fetch(base + 'builtin/export'); assert.equal(parseContext(await builtin.text()).id, 'ds-personification');
   assert.equal((await fetch(base + 'draft/export')).status, 400);
 });
+test('普通表单保存同步背景和术语，保留本机来源原文、结果和来源解释；撤销完整恢复', async t => {
+  const engine = await fixture(t); await engine.importContext({ config: generic() });
+  const d = engine.store.data, profile = d.background.active;
+  profile.parts = ['local metadata']; profile.readings[0].parts.push({ label: '本机原文', text: 'PRIVATE_FULL_POST' });
+  await engine.store.upsert({ kind: 'comment', text: '旧评论', context: '' }); d.items[0].analysis = { decision: 'normal' };
+  const before = structuredClone(d), edit = engine.contextDocument();
+  edit.config.name = '修订专题'; edit.config.background.memo = '修订背景 [B1]'; edit.config.glossary[0].meaning = '修订词义';
+  await engine.editContext(edit);
+  assert.equal(d.context.active.config.background.memo, '修订背景 [B1]'); assert.equal(d.background.active.memo, '修订背景 [B1]');
+  assert.equal(engine.analysisSettings(d.settings).topicContext.glossary[0].meaning, '修订词义');
+  assert.deepEqual(d.background.active.readings, before.background.active.readings); assert.deepEqual(d.items, before.items); assert.deepEqual(d.jobs, before.jobs); assert.deepEqual(d.settings, before.settings);
+  assert.equal(engine.state().counts.pending, 0); assert.ok(!JSON.stringify(engine.exportContext()).includes('PRIVATE_FULL_POST'));
+  await engine.undoContext(); assert.deepEqual(d.background, before.background); assert.deepEqual(d.context.active, before.context.active); assert.deepEqual(d.items, before.items);
+});
+test('表单保存拒绝过期编辑、运行中编辑、格式错误及来源替换；写入失败完整回滚', async t => {
+  const engine = await fixture(t); await engine.importContext({ config: generic() });
+  const edit = engine.contextDocument(); await engine.useBuiltinContext();
+  await assert.rejects(engine.editContext(edit), /专题已发生变化/);
+  const current = engine.contextDocument(), before = structuredClone(engine.store.data);
+  engine.active = {}; await assert.rejects(engine.editContext(current), /任务进行中/); engine.active = null;
+  current.config.glossary[0].meaning = ''; await assert.rejects(engine.editContext(current), /请填写内容/); assert.deepEqual(engine.store.data, before);
+  const changed = engine.contextDocument(); changed.config.background.sources[0].title += '替换'; await assert.rejects(engine.editContext(changed), /不能替换来源/);
+  engine.store.save = async () => { throw new Error('保存失败'); };
+  await assert.rejects(engine.editContext(engine.contextDocument()), /保存失败/); assert.deepEqual(engine.store.data, before);
+});
+test('新专题可直接用表单创建；HTTP旧背景入口退休且不发起任务', async t => {
+  const engine = await fixture(t); const edit = engine.contextDocument(); edit.config.name = '自己的专题'; edit.config.background.memo = '用于介绍讨论环境的背景资料';
+  await engine.editContext(edit); assert.equal(engine.context().active.name, '自己的专题'); assert.equal(engine.store.data.jobs.length, 0);
+  const server = createServer(createHandler(engine)); await new Promise(r => server.listen(0, '127.0.0.1', r)); t.after(() => new Promise(r => server.close(r)));
+  const origin = `http://127.0.0.1:${server.address().port}`, base = origin + '/plugins/dafeiyu-patrol/api/';
+  const doc = await (await fetch(base + 'context/document')).json(); assert.equal(doc.config.name, '自己的专题');
+  for (const route of ['background/start', 'background/update']) {
+    const response = await fetch(base + route, { method: 'POST', headers: { 'content-type': 'application/json', origin }, body: '{}' });
+    assert.equal(response.status, 410); assert.match((await response.json()).error, /专题页/);
+  }
+  assert.equal(engine.store.data.jobs.length, 0);
+});

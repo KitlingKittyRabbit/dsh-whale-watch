@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu-patrol",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "鲸声守望：辅助发现不合理讨论，共同维护讨论与创作环境",
   "type": "module",
   "main": "src/index.js",
@@ -50,7 +50,10 @@
       "platform": "web",
       "inject": [
         "@deepseek-ai/dsh-client-ui-sidebar",
-        "@deepseek-ai/dsh-client-ui-layout"
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-workspace"
       ]
     }
   },

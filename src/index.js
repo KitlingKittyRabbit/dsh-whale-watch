@@ -34,7 +34,7 @@ export async function apply(ctx, config = {}) {
   });
   ctx.effect(() => unregister, 'patrol preset');
   const unregisterBuilder = await ctx.agentPresets.register({
-    id: 'whale-watch-context-builder', name: '鲸声守望配置制作助手', description: '帮助整理专题背景、黑话和术语，生成可下载的配置草稿', order: 6,
+    id: 'whale-watch-context-builder', name: '鲸声守望配置制作助手', description: '帮助整理背景和术语，草稿在专题页查看并采用', order: 6,
     plugins: [
       { name: '@deepseek-ai/dsh-persona', config: { prefix: CONTEXT_BUILDER_PROMPT, suffix: '', complete: false } },
       { name: fileURLToPath(new URL('./context-agent.js', import.meta.url)) },

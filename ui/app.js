@@ -27,8 +27,18 @@ function fillModels() {
   for (const model of selected?.models || []) { const option = el('option', model.name || model.id); option.value = model.id; $('model').append(option); }
   $('model').disabled = !provider;
 }
+function searchSelection() { return Object.fromEntries(Object.keys(state.searchOptions || {}).map(key => [key, $('search-' + key).value])); }
+function searchForm() {
+  const root = $('search-options'); root.replaceChildren();
+  for (const [key, option] of Object.entries(state.searchOptions || {})) {
+    const label = el('label', option.label), select = el('select'); select.id = 'search-' + key;
+    for (const [value, text] of option.choices) { const choice = el('option', text); choice.value = value; select.append(choice); }
+    select.value = state.settings[key] || option.default; label.append(select); root.append(label);
+  }
+}
 function settingsForm() {
   const s = state.settings;
+  searchForm();
   $('keywords').value = s.keywords.join('，');
   for (const key of ['maxNotes', 'maxComments', 'maxAnalysis', 'rules']) $(key).value = s[key];
   $('provider').value = s.provider; fillModels();
@@ -60,6 +70,8 @@ async function refresh() {
   $('seen-cache-count').textContent = `已查缓存：${state.seenCache?.count || 0} 篇`;
   $('clear-seen-cache').disabled = running || !state.seenCache?.count;
   $('restore-seen-cache').hidden = !state.seenCache?.canRestore; $('restore-seen-cache').disabled = running;
+  for (const key of Object.keys(state.searchOptions || {})) { const input = $('search-' + key); if (input) input.disabled = running; }
+  $('save-search-options').disabled = running;
   for (const id of ['start', 'analyze']) $(id).disabled = running;
   $('stop').hidden = !running;
   const job = state.jobs[0];
@@ -69,7 +81,7 @@ async function refresh() {
     const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(job.startedAt)) / 1000));
     $('job-waiting').textContent = `已运行 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒 · 等待本批结果时，完成数会暂时不变。`;
     $('job-status').textContent = job.status === 'running' && job.mode !== 'scan' ? '正在分析' : statuses[job.status] || job.status;
-    $('job-message').textContent = job.message;
+    $('job-message').textContent = job.message + (job.searchSummary ? '\n' + job.searchSummary : '');
     $('job-counts').textContent = `${job.notesAttempted === undefined ? '' : `排除已查 ${job.notesExcluded || 0} 篇 · 检查 ${job.notesAttempted} 篇 · 读到 ${job.notesRead} 篇 · 未读取 ${job.skippedNotes?.length || 0} 篇 · `}本轮：采集 ${job.collected} · 新分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`;
     $('job-log').replaceChildren(...job.messages.slice(-30).map(log => el('li', new Date(log.at).toLocaleTimeString('zh-CN') + ' · ' + log.message)));
   }
@@ -151,7 +163,8 @@ async function action(button, path, data = {}) {
 }
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => { tab(button.dataset.tab); if (activeTab === 'results') refreshResults(true).catch(e => notice(e.message, true)); }));
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { filter = button.dataset.filter; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b === button)); refreshResults(true).catch(e => notice(e.message, true)); }));
-$('start').addEventListener('click', () => { const urls = $('urls').value.split('\n').map(s => s.trim()).filter(Boolean); action($('start'), '/start', { ...(urls.length ? { urls } : { keywords: split($('keywords').value) }), excludeSeen: $('exclude-seen').checked }); });
+$('save-search-options').addEventListener('click', () => action($('save-search-options'), '/settings', { ...state.settings, ...searchSelection() }));
+$('start').addEventListener('click', () => { const urls = $('urls').value.split('\n').map(s => s.trim()).filter(Boolean); action($('start'), '/start', { ...(urls.length ? { urls } : { keywords: split($('keywords').value) }), excludeSeen: $('exclude-seen').checked, ...searchSelection() }); });
 for (const id of ['analyze', 'stop', 'resume']) $(id).addEventListener('click', () => action($(id), '/' + id));
 $('clear-seen-cache').addEventListener('click', () => action($('clear-seen-cache'), '/cache/clear'));
 $('restore-seen-cache').addEventListener('click', () => action($('restore-seen-cache'), '/cache/restore'));
@@ -160,7 +173,7 @@ $('settings-form').addEventListener('submit', async event => {
   event.preventDefault();
   const provider = $('provider').value, model = provider ? $('model').value : '';
   if (provider && !model) { notice('请选择分析模型', true); return; }
-  try { await api('/settings', { ...state.settings, keywords: split($('keywords').value), provider, model, maxNotes: Number($('maxNotes').value), maxComments: Number($('maxComments').value), maxAnalysis: Number($('maxAnalysis').value), rules: $('rules').value }); notice('设置已保存。已有判断保留，重新分析时会使用新规则。'); await refresh(); }
+  try { await api('/settings', { ...state.settings, ...searchSelection(), keywords: split($('keywords').value), provider, model, maxNotes: Number($('maxNotes').value), maxComments: Number($('maxComments').value), maxAnalysis: Number($('maxAnalysis').value), rules: $('rules').value }); notice('设置已保存。已有判断保留，重新分析时会使用新规则。'); await refresh(); }
   catch (error) { notice(error.message, true); }
 });
 $('import-form').addEventListener('submit', async event => {

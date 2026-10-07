@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { CATEGORIES, canonicalCategory } from './rules.js';
+import { SEARCH_OPTIONS } from './search-options.js';
 
 export const settingsSchema = z.object({
+  ...Object.fromEntries(Object.entries(SEARCH_OPTIONS).map(([key, option]) => [key, z.enum(option.choices.map(([value]) => value)).default(option.default)])),
   collectionSource: z.enum(['browser', 'socialdatax']).default('socialdatax'),
   apiBudgetYuan: z.number().min(0.1).max(100).default(5),
   discussionNoteLimit: z.number().int().min(1).max(30).default(5),
@@ -18,6 +20,7 @@ export const settingsSchema = z.object({
   rules: z.string().trim().min(20).max(12000),
 });
 export const startSchema = z.object({
+  ...Object.fromEntries(Object.keys(SEARCH_OPTIONS).map(key => [key, settingsSchema.shape[key].unwrap().optional()])),
   collectionSource: settingsSchema.shape.collectionSource.unwrap().optional(),
   apiBudgetYuan: settingsSchema.shape.apiBudgetYuan.unwrap().optional(),
   discussionNoteLimit: settingsSchema.shape.discussionNoteLimit.unwrap().optional(),

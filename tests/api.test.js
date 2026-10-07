@@ -8,7 +8,8 @@ import { Store, defaultSettings } from '../src/store.js';
 import { PatrolEngine } from '../src/engine.js';
 import { DshModel } from '../src/model.js';
 import { discussionInput, discussionHash } from '../src/discussion.js';
-import { parseAnalysis } from '../src/schema.js';
+import { parseAnalysis, settingsSchema, startSchema } from '../src/schema.js';
+import { SEARCH_OPTIONS, DEFAULT_SEARCH_SETTINGS } from '../src/search-options.js';
 
 const noteId = '6ac119d5000000001500fd74', url = `https://www.xiaohongshu.com/explore/${noteId}?xsec_token=fixture`;
 const key = 'fixture-private-key';
@@ -182,4 +183,56 @@ test('分块UTF8响应可解析，网络失败费用保持待确认且不重复�
   assert.equal(calls, 2); assert.equal(job.apiCostCents, 10); assert.equal(job.apiUnconfirmed, 1); assert.equal(job.status, 'partial');
   assert.equal(engine.store.data.items.find(i => i.kind === 'note').text, note.content);
   assert.equal(JSON.stringify(engine.store.data).includes(key), false);
+});
+
+
+test('搜索筛选与评论排序穿透每一页请求；分页令牌只复用同一查询，视频明确有内容缺口', async t => {
+  for (let n=0;n<5;n++) {
+    const selected=Object.fromEntries(Object.entries(SEARCH_OPTIONS).map(([key,option])=>[key,option.choices[n%option.choices.length][0]]));
+    const {source,calls}=await adapter(t,(path,body)=>{
+      if(path==='/note/search')return {items:[{note_id:body.page_token?noteId:'6ac119d5000000001500fd75',note_url:url}],next_page_token:body.page_token?'':'search-chain-token',points:{cost:10}};
+      if(path==='/note/detail')return {...note,note_type:selected.noteType==='video'?'video':'image',comment_count:2};
+      if(path==='/note/comment/list')return body.page_token?page([c(2)]):page([c(1)],'comments-chain-token');
+      throw new Error('未知接口');
+    });
+    const bundles=[];for await(const b of source.collect(options({urls:[],keywords:['社区讨论'],maxNotes:1,excludedNoteIds:['6ac119d5000000001500fd75'],...selected}),new AbortController().signal,()=>{}))bundles.push(b);
+    const queries=calls.filter(c=>c.path.endsWith('/note/search'));
+    assert.equal(queries.length,2);
+    assert.deepEqual(queries.map(c=>c.body),['','search-chain-token'].map(page_token=>({keyword:'社区讨论',sort_type:selected.noteSort,publish_time_range:selected.publishTimeRange,note_type:selected.noteType,page_token})));
+    const comments=calls.filter(c=>c.path.endsWith('/note/comment/list'));
+    assert.deepEqual(comments.map(c=>c.body),['','comments-chain-token'].map(page_token=>({note_id:noteId,sort_type:selected.commentSort,page_token})));
+    assert.equal(bundles.length,1);assert.equal(bundles[0].comments.length,2);
+    assert.equal(bundles[0].note.coverage.unsupportedMedia,selected.noteType==='video');
+  }
+});
+
+test('所有公开搜索选项可保存，非法或自造时间范围拒绝；未传本轮选项不覆盖默认',()=>{
+  const parsed = startSchema.parse({});
+  for (const key of Object.keys(SEARCH_OPTIONS)) assert.equal(parsed[key], undefined);
+  for(const [key,option]of Object.entries(SEARCH_OPTIONS)) {
+    for(const[value]of option.choices)assert.equal(settingsSchema.parse({...defaultSettings(),[key]:value})[key],value);
+    assert.throws(()=>startSchema.parse({[key]:'unsupported'}));
+  }
+  assert.throws(()=>startSchema.parse({publishTimeRange:'30_days'}));
+});
+
+test('默认筛选持久化，单轮覆盖不修改默认；继续任务沿用原筛选，旧任务恢复旧行为',async t=>{
+  const r=await root(t),e=await new PatrolEngine(new Store(r),{},{}).init();
+  const chosen={noteSort:'comment_count_descending',publishTimeRange:'week',noteType:'image',commentSort:'like_count_descending'};
+  await e.settings({...e.store.data.settings,...chosen});
+  const restarted=await new Store(r).init();
+  for(const[key,value]of Object.entries(chosen))assert.equal(restarted.data.settings[key],value);
+  assert.equal(e.options({}).publishTimeRange,'week');
+  assert.equal(e.options({publishTimeRange:'day'}).publishTimeRange,'day');
+  assert.equal(e.store.data.settings.publishTimeRange,'week');
+  await e.start({},'analyze');await e.active.promise;
+  const job=e.store.data.jobs.at(-1);job.status='cancelled';
+  await e.settings({...e.store.data.settings,...DEFAULT_SEARCH_SETTINGS});
+  await e.resume({jobId:job.id});await e.active.promise;
+  for(const[key,value]of Object.entries(chosen))assert.equal(e.store.data.jobs.at(-1).options[key],value);
+  assert.match(e.store.data.jobs.at(-1).searchSummary,/最多评论.*一周内/);
+  job.status='cancelled';for(const key of Object.keys(chosen))delete job.options[key];
+  await e.settings({...e.store.data.settings,...chosen});
+  await e.resume({jobId:job.id});await e.active.promise;
+  for(const[key,value]of Object.entries(DEFAULT_SEARCH_SETTINGS))assert.equal(e.store.data.jobs.at(-1).options[key],value);
 });

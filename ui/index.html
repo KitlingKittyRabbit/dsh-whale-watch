@@ -4,7 +4,7 @@
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.7.8</small></strong></div>
+    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.7.9</small></strong></div>
     <nav aria-label="主导航"><button class="nav active" data-tab="results">巡查结果<span>↗</span></button><button class="nav" data-tab="import">导入文字<span>＋</span></button><button class="nav" data-tab="settings">规则与设置<span>⚙</span></button></nav>
     <div class="aside-note"><span class="dot"></span>本机工作台<p>发现具体言行<br>保留原文与上下文<br>看完点击已阅</p></div>
     <a class="back" href="/">← 回到 DSH</a>
@@ -18,6 +18,7 @@
       <section class="box"><h2>采集记录管理</h2><p class="hint">清空正文、评论、分析、已阅记录、巡查任务和已查缓存；保留模型、规则、背景和密钥，可撤销。</p><div class="actions"><button id="clear-collection">清空采集记录</button><button id="restore-collection" hidden>撤销清空采集记录</button></div></section>
       <section class="scan box"><div class="section-head"><h2>发起一次巡查</h2><span id="model-current" class="muted">读取 DSH 模型配置…</span></div>
         <label>关键词<input id="keywords" placeholder="大肥鱼，DeepSeek拟人"></label>
+        <div id="search-options" class="grid-two"></div><button id="save-search-options">保存搜索选项为默认</button><p class="hint">选择用于下一次巡查；保存为默认后刷新也保留。指定链接时笔记排序、时间与类型筛选不适用，评论排序仍有效；分析未阅不会重新搜索。视频只读取文字、配图与评论，不识别视频画面或音频。多个关键词依次搜索，找到本轮数量即停止。</p>
         <details><summary>或指定笔记链接</summary><label>每行一个链接<textarea id="urls" rows="3" placeholder="https://www.xiaohongshu.com/explore/…"></textarea></label></details>
         <label><input id="exclude-seen" type="checkbox" checked>排除已查过的笔记</label><p class="hint">只读取新笔记；要更新旧帖正文或新评论，请取消勾选。未读成功的笔记仍可重试。</p>
         <div class="actions"><span id="seen-cache-count" class="muted"></span><button id="clear-seen-cache">清空已查缓存</button><button id="restore-seen-cache" hidden>撤销上次清理</button></div><p class="hint">清空后旧帖可再次查找，原文、分析和复核保留。相同文字仍复用已有分析。</p>

@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu-patrol",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "鲸声守望：辅助发现不合理讨论，共同维护讨论与创作环境",
   "type": "module",
   "main": "src/index.js",

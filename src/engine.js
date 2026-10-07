@@ -11,6 +11,7 @@ import { communityBackgroundInfo, createCommunityBackground } from './community-
 import { discussionHash, discussionBatches } from './discussion.js';
 import { CONTEXTUAL_BEHAVIOR_GUIDE } from './rules.js';
 import { discussionUnits, findUnit } from './units.js';
+import { SEARCH_OPTIONS, searchSummary } from './search-options.js';
 
 export class PatrolEngine {
   constructor(store, browser, model, apiCollector = null) { this.store = store; this.browser = browser; this.model = model; this.apiCollector = apiCollector; this.active = null; }
@@ -46,7 +47,7 @@ export class PatrolEngine {
     const data = this.store.data, units = this.unitViews(), unread = units.filter(i => !i.readAt);
     const entries = unread.flatMap(i => i.entries.filter(e => !e.readAt));
     const suspicious = unread.filter(i => i.inspectionResult === 'suspicious').length;
-    return { settings: data.settings, policy: { version: 'community-environment-v8', contextGuide: CONTEXTUAL_BEHAVIOR_GUIDE }, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
+    return { settings: data.settings, searchOptions: SEARCH_OPTIONS, policy: { version: 'community-environment-v8', contextGuide: CONTEXTUAL_BEHAVIOR_GUIDE }, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: units.length, unread: unread.length, read: units.length - unread.length, review: suspicious, suspicious,
       other: unread.filter(i => i.entries.some(e => !e.readAt && e.inspectionResult === 'other')).length,
       uncertain: unread.filter(i => i.entries.some(e => e.inspectionResult === 'other' && e.analysis?.decision === 'uncertain')).length,
@@ -151,7 +152,7 @@ export class PatrolEngine {
     if (needsCollection && options.collectionSource !== 'socialdatax') throw new Error(BROWSER_DISABLED_MESSAGE);
     if (needsCollection && !this.apiCollector?.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key，或导入原文进行离线分析');
     const job = { id: randomUUID(), mode, resumeOnlyPending, status: 'running', startedAt: new Date().toISOString(),
-      options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
+      options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, searchSummary: searchSummary(options), notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
     this.store.data.jobs.push(job);
     this.store.data.jobs = this.store.data.jobs.slice(-100);
     const controller = new AbortController();
@@ -445,8 +446,8 @@ export class PatrolEngine {
     const job = jobId ? this.store.data.jobs.find(j => j.id === jobId) : this.store.data.jobs.at(-1);
     if (!job || !(['paused', 'cancelled', 'interrupted'].includes(job.status) || job.status === 'partial' && job.analysisDeferred)) throw new Error('没有可继续的已停止、暂停或达到分析篇数上限的任务');
     if (job.mode === 'evaluate') throw new Error('评估任务请到“示例评估”重新运行');
-    const { keywords, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit } = job.options;
-    const options = { ...(urls?.length ? { urls } : keywords?.length ? { keywords } : {}), maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit };
+    const { keywords, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort, publishTimeRange, noteType, commentSort } = job.options;
+    const options = { ...(urls?.length ? { urls } : keywords?.length ? { keywords } : {}), maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort: noteSort || 'time_descending', publishTimeRange: publishTimeRange || 'all', noteType: noteType || 'all', commentSort: commentSort || 'default' };
     // Stopped scans may already have saved records that their seen-note cache would skip.
     const mode = job.mode === 'scan' && job.status !== 'paused' && analyze && this.state().counts.pending > 0 ? 'analyze' : job.mode;
     const result = await this.start(options, mode, job.backgroundPlan, true);

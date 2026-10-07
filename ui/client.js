@@ -30,6 +30,12 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
   const Hint = ({ children }) => h('p', { className: 'patrol-hint' }, children);
   const Box = ({ title, children, className = '', ...props }) => h('section', { ...props, className: 'patrol-box ' + className }, title && h('h2', null, title), children);
   function Field({ label, children }) { return h('label', { className: 'patrol-field' }, h('span', null, label), children); }
+  const searchValues = (settings, options) => Object.fromEntries(Object.entries(options || {}).map(([key, option]) => [key, settings[key] || option.default]));
+  function SearchControls({ options, values, disabled, onChange }) {
+    return h('div', { className: 'patrol-grid-two' }, ...Object.entries(options || {}).map(([key, option]) =>
+      h(Field, { key, label: option.label }, h('select', { value: values[key] || option.default, disabled, onChange: e => onChange(key, e.target.value) },
+        ...option.choices.map(([value, label]) => h('option', { key: value, value }, label))))));
+  }
   function RecordCard({ item, busy, running, act, hasBackground, embedded = false }) {
     const a = item.analysis;
     return h('article', { className: 'patrol-record', 'aria-label': item.title || '内容记录' },
@@ -187,6 +193,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const [filter, setFilter] = useState('all'), [offset, setOffset] = useState(0);
     const [notice, setNotice] = useState(null), [busy, setBusy] = useState(false);
     const [draft, setDraft] = useState(null), [keywords, setKeywords] = useState(''), [urls, setUrls] = useState('');
+    const [searchDraft, setSearchDraft] = useState({});
     const [collectOnly, setCollectOnly] = useState(false), [excludeSeen, setExcludeSeen] = useState(true);
     const collectionSource = 'socialdatax'; const [dataKey, setDataKey] = useState('');
     const [input, setInput] = useState({ kind: 'comment', title: '', text: '', context: '', url: '' });
@@ -198,7 +205,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
       if (signal.aborted || id !== requestId.current) return;
       setState(next); setReport(evaluation); setBackground(nextBackground);
       if (offset > 0 && records.total <= offset) { setOffset(Math.max(0, Math.floor((records.total - 1) / 20) * 20)); } else setResults(records);
-      if (!initialized.current) { initialized.current = true; setDraft(next.settings); setKeywords(next.settings.keywords.join('，')); }
+      if (!initialized.current) { initialized.current = true; setDraft(next.settings); setSearchDraft(searchValues(next.settings, next.searchOptions)); setKeywords(next.settings.keywords.join('，')); }
     }, [filter, offset]);
     useEffect(() => {
       const controller = new AbortController(); lifecycle.current = controller;
@@ -226,7 +233,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
         if (controller.signal.aborted) return;
         setNotice({ text: result.message || '操作已保存。' });
         if (path === '/data-key') setDataKey('');
-        if (path === '/settings') { setDraft(result.settings); }
+        if (path === '/settings') { setDraft(result.settings); setSearchDraft(searchValues(result.settings, result.searchOptions)); }
         await refresh(controller.signal);
       } catch (error) { if (!controller.signal.aborted) setNotice({ error: true, text: error.message }); }
       finally { if (!controller.signal.aborted) setBusy(false); }
@@ -252,7 +259,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('div', { className: 'patrol-native', 'data-patrol-native': true },
       h('div', { className: 'patrol-workbench' },
         h('header', { className: 'patrol-header' }, h('div', null,
-          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.8')),
+          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.9')),
           h(Hint, null, '辅助发现不合理讨论，共同维护讨论与创作环境。')), 
           h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话'))),
         h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查结果'], ['background', '背景阅读'], ['import', '导入文字'], ['settings', '规则与设置'], ['evaluation', '示例评估']].map(([id, label]) =>
@@ -262,7 +269,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
           job && (running || canContinue) && h(Box, { className: running ? 'patrol-running-task' : '',
             title: running ? h('span', { className: 'patrol-running-heading' }, h('span', { className: 'patrol-spinner', 'aria-hidden': true }), runningLabel, h('span', { className: 'patrol-running-badge' }, '运行中')) : statuses[job.status] },
             running && h('p', { className: 'patrol-running-explainer' }, `已运行 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒 · 等待本批结果时，完成数会暂时不变。`),
-            h('p', { role: 'status' }, job.message), h(Hint, null, `本轮：采集 ${job.collected} · 新分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`),
+            h('p', { role: 'status' }, job.message), job.searchSummary && h(Hint, null, job.searchSummary), h(Hint, null, `本轮：采集 ${job.collected} · 新分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`),
             job.apiRequests > 0 && h(Hint, null, `数据读取 ${job.apiRequests} 次 · 已确认 ¥${(job.apiCostCents / 100).toFixed(2)}${job.apiUnconfirmed ? ` · ${job.apiUnconfirmed} 次费用尚未确认` : ''} · 本轮数据上限 ¥${job.options.apiBudgetYuan}（模型另计）`),
             h('div', { className: 'patrol-actions' }, running && h(Button, { disabled: busy, onClick: () => act('/stop') }, '停止任务'),
               !running && canContinue && h(Button, { primary: true, disabled: busy, onClick: () => act('/resume', { jobId: job.id }) }, continueLabel))),
@@ -286,6 +293,10 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Hint, null, '读取方式：数据 API。浏览器自动采集已停用，待风控问题解决后再考虑恢复；也可直接导入原文。'),
               collectionSource === 'socialdatax' && h(Hint, null, state.dataService?.configured ? `数据密钥已配置。按当前单价限制本轮数据请求，额度 ¥${state.settings.apiBudgetYuan}，模型费用另计。` : '先到“规则与设置”填写 SocialDataX API Key。此方式不需要登录小红书。'),
               h(Field, { label: '关键词' }, h('input', { value: keywords, onChange: e => setKeywords(e.target.value), placeholder: '大肥鱼，DeepSeek拟人' })),
+              h(SearchControls, { options: state.searchOptions, values: searchDraft, disabled: busy || running, onChange: (key, value) => { setSearchDraft(prev => ({ ...prev, [key]: value })); setDraft(prev => ({ ...prev, [key]: value })); } }),
+              h('div', { className: 'patrol-actions' }, h(Button, { disabled: busy || running, onClick: () => act('/settings', { ...state.settings, ...searchDraft }) }, '保存搜索选项为默认')),
+              h(Hint, null, '选择立即用于下一次巡查；保存为默认后刷新也会保留。指定链接时笔记排序、时间及类型筛选不适用，评论排序仍有效；分析未阅不会重新搜索。'),
+              h(Hint, null, '视频选项只读取接口提供的文字、配图和评论，不识别视频画面或音频。时间范围只提供接口支持的一天、一周、半年。多个关键词依次搜索，找到本轮数量即停止，不是合并后的全局热度排名。'),
               h('details', null, h('summary', null, '或指定笔记链接'), h(Field, { label: '每行一个链接' }, h('textarea', { value: urls, onChange: e => setUrls(e.target.value), rows: 3, placeholder: '小红书笔记或分享链接' }))),
               h('label', null, h('input', { type: 'checkbox', checked: excludeSeen, onChange: e => setExcludeSeen(e.target.checked) }), ' 排除已查过的笔记'),
               h(Hint, null, '按笔记编号跨任务去重，只读新笔记。要更新旧帖正文或新评论，请取消勾选。未读成功的笔记仍会重试。'),
@@ -295,12 +306,12 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Hint, null, '清空后旧帖可再次查找；原文、分析和人工复核保留。相同文字仍复用已有分析。'),
               h('label', null, h('input', { type: 'checkbox', checked: collectOnly, onChange: e => setCollectOnly(e.target.checked) }), ' 仅采集，暂不调用模型'),
               h('div', { className: 'patrol-actions' }, h(Button, { primary: true, disabled: busy || running, onClick: () => {
-                const list = urls.split('\n').map(s => s.trim()).filter(Boolean); act('/start', { ...(list.length ? { urls: list } : { keywords: split(keywords) }), collectionSource, analyze: !collectOnly, excludeSeen });
+                const list = urls.split('\n').map(s => s.trim()).filter(Boolean); act('/start', { ...(list.length ? { urls: list } : { keywords: split(keywords) }), collectionSource, analyze: !collectOnly, excludeSeen, ...searchDraft });
               } }, '按篇读取并分析'),
               h(Button, { disabled: busy || running, onClick: () => act('/analyze') }, '分析未阅篇目')),
               h(Hint, null, `本轮最多 ${state.settings.maxNotes} 篇，分页读取评论及回复，直到读完或费用上限。先收集再结合讨论分析，本轮最多分析 ${state.settings.discussionNoteLimit} 篇，篇内分批输出具体依据；超出篇目可继续分析。另最多看图 ${state.settings.maxVision} 条笔记或评论。`),
               h(Hint, null, '只读取接口返回的公开内容，不保证包含隐藏或删除的评论。读取不完整会显示原因；不会自动回退到浏览器。第三方 API 不等于平台官方授权。')),
-            job && !running && !canContinue && h(Box, { title: statuses[job.status] || job.status }, h('p', null, job.message),
+            job && !running && !canContinue && h(Box, { title: statuses[job.status] || job.status }, h('p', null, job.message), job.searchSummary && h(Hint, null, job.searchSummary),
               job.apiRequests > 0 && h(Hint, null, `数据读取 ${job.apiRequests} 次 · 已确认 ¥${(job.apiCostCents / 100).toFixed(2)}${job.apiUnconfirmed ? ` · ${job.apiUnconfirmed} 次费用尚未确认` : ''}（模型另计）`),
               ...(job.discussionGaps || []).map((gap, i) => h(Hint, { key: i }, `${gap.title}：${gap.limitations.join('；')}`)),
               job.notesAttempted !== undefined && h(Hint, null, `排除已查 ${job.notesExcluded || 0} 篇 · 检查 ${job.notesAttempted} 篇 · 读到 ${job.notesRead} 篇 · 未读取 ${job.skippedNotes?.length || 0} 篇`),
@@ -335,6 +346,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h('div', { className: 'patrol-actions' }, h(Button, { disabled: busy || running || !dataKey.trim(), onClick: () => act('/data-key', { apiKey: dataKey }) }, '保存数据密钥'),
                 state.dataService?.configured && h(Button, { disabled: busy || running, onClick: () => act('/data-key', { apiKey: '' }) }, '清除数据密钥'),
                 h('a', { href: 'https://socialdatax.com/ai/', target: '_blank', rel: 'noopener noreferrer' }, '获取 API Key ↗'))),
+            h(Box, { title: '默认搜索选项' }, h(SearchControls, { options: state.searchOptions, values: draft, disabled: busy || running, onChange: (key, value) => { setDraft(prev => ({ ...prev, [key]: value })); setSearchDraft(prev => ({ ...prev, [key]: value })); } }), h(Hint, null, '保存规则与设置后作为后续巡查的默认选择。')) ,
             h(Box, { title: '模型与分析范围' }, h(Hint, null, '复用 DSH 已配置的模型和凭据，不另存模型密钥。整篇分析按上面的篇数控制；单独导入和样例评估使用各自上限。'),
               h('div', { className: 'patrol-grid-two' }, h(Field, { label: '模型服务' }, h('select', { value: draft.provider, onChange: e => setDraft(prev => ({ ...prev, provider: e.target.value, model: '' })) },
                 h('option', { value: '' }, '跟随 DSH 默认模型'), ...(catalog?.providers || []).map(p => h('option', { key: p.id, value: p.id }, p.name || p.id)))),
@@ -365,7 +377,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.7.8';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.7.9';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,

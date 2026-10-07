@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import { validateNoteUrl } from './schema.js';
 import { captureImages } from './images.js';
+import { DEFAULT_SEARCH_SETTINGS } from './search-options.js';
 
 const BASE = 'https://mcp.socialdatax.com/socialdatax/api/v1/xhs';
 const id = z.string().regex(/^[a-f0-9]{24}$/i);
@@ -65,6 +66,7 @@ export class SocialDataX {
     return parsed;
   }
   async *collect(options, signal, progress) {
+    options = { ...DEFAULT_SEARCH_SETTINGS, ...options };
     if (!this.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key；不会自动改用浏览器采集');
     const session = { attempts: 0, costCents: 0, unknown: 0, budget: options.apiBudgetYuan, maxRequests: Math.floor(options.apiBudgetYuan * 10 + 1e-8) };
     const excluded = new Set(options.excludedNoteIds || []), reported = new Set(), candidates = [], queued = new Set();
@@ -79,7 +81,7 @@ export class SocialDataX {
       if (candidates.length >= options.maxNotes) break;
       let token = ''; const tokens = new Set();
       for (let n = 0; n < 5 && candidates.length < options.maxNotes; n++) {
-        const found = await this.request('/note/search', { keyword, sort_type: 'time_descending', page_token: token }, search, session, signal, progress);
+        const found = await this.request('/note/search', { keyword, sort_type: options.noteSort, publish_time_range: options.publishTimeRange, note_type: options.noteType, page_token: token }, search, session, signal, progress);
         for (const row of found.items) add(row);
         token = found.next_page_token; if (!token || tokens.has(token)) break; tokens.add(token);
       }
@@ -115,7 +117,7 @@ export class SocialDataX {
         }
       };
       try {
-        topComplete = await readPages('/note/comment/list', { note_id: key, sort_type: 'default' });
+        topComplete = await readPages('/note/comment/list', { note_id: key, sort_type: options.commentSort });
         repliesComplete = topComplete;
         for (const row of [...rows.values()].filter(r => !r.parent_comment_id && r.reply_count > 0)) {
           if (!await readPages('/note/comment/sub/list', { note_id: key, comment_id: row.comment_id }, row.comment_id)) repliesComplete = false;

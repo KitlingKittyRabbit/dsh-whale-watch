@@ -51,6 +51,8 @@ async function refresh() {
   }
   $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 每篇 ${s.maxComments} 条可见评论 · ${s.discussionNoteLimit} 篇整篇分析。结果按当前搜索排序读取。`;
   const running = !!state.activeJob;
+  $('job-box').classList.toggle('running', running);
+  $('job-spinner').hidden = !running; $('job-live-badge').hidden = !running; $('job-waiting').hidden = !running;
   $('clear-collection').disabled = running || !state.collection?.canClear;
   $('restore-collection').hidden = !state.collection?.canRestore; $('restore-collection').disabled = running;
   $('seen-cache-count').textContent = `已查缓存：${state.seenCache?.count || 0} 篇`;
@@ -62,6 +64,8 @@ async function refresh() {
   $('job-box').hidden = !job;
   $('resume').hidden = running || !(['paused', 'cancelled', 'interrupted'].includes(job?.status) || job?.status === 'partial' && job.analysisDeferred) || job?.mode === 'evaluate';
   if (job) {
+    const elapsed = Math.max(0, Math.floor((Date.now() - Date.parse(job.startedAt)) / 1000));
+    $('job-waiting').textContent = `已运行 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒 · 等待本批结果时，完成数会暂时不变。`;
     $('job-status').textContent = job.status === 'running' && job.mode !== 'scan' ? '正在分析' : statuses[job.status] || job.status;
     $('job-message').textContent = job.message;
     $('job-counts').textContent = `${job.notesAttempted === undefined ? '' : `排除已查 ${job.notesExcluded || 0} 篇 · 检查 ${job.notesAttempted} 篇 · 读到 ${job.notesRead} 篇 · 未读取 ${job.skippedNotes?.length || 0} 篇 · `}采集 ${job.collected} · 分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`;

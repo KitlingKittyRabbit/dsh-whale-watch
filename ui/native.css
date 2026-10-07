@@ -6,3 +6,6 @@
 .patrol-background-entry{padding:10px 0;border-bottom:1px solid var(--patrol-line)}.patrol-background-entry:last-child{border-bottom:0}.patrol-box>details{margin:12px 0}.patrol-box>details>summary{font-weight:500}
 
 .patrol-stats .patrol-stat-entries{display:block;font-size:14px;margin-top:2px}
+
+.patrol-box.patrol-running-task{position:sticky;top:8px;z-index:5;border:2px solid #6b91da;border-left:6px solid #416fac;background:color-mix(in srgb,#6b91da 13%,var(--patrol-bg));box-shadow:0 4px 18px #416fac20}
+.patrol-running-task h2{font-size:20px;color:var(--patrol-ink)}.patrol-running-heading{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.patrol-spinner{display:inline-block;width:22px;height:22px;flex-shrink:0;border:3px solid #6b91da;border-right-color:transparent;border-radius:50%;animation:patrol-spin 1s linear infinite}.patrol-running-badge{font-size:12px;color:#fff;background:#416fac;padding:3px 10px;border-radius:20px;font-weight:500}.patrol-running-explainer{font-size:13px;color:var(--patrol-muted)}@keyframes patrol-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.patrol-spinner{animation:none}}

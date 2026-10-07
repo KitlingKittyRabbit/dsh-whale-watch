@@ -28,7 +28,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('button', { type: 'button', ...props, className: 'patrol-button' + (primary ? ' patrol-primary' : '') + (props.className ? ' ' + props.className : '') }, children);
   }
   const Hint = ({ children }) => h('p', { className: 'patrol-hint' }, children);
-  const Box = ({ title, children, ...props }) => h('section', { ...props, className: 'patrol-box' }, title && h('h2', null, title), children);
+  const Box = ({ title, children, className = '', ...props }) => h('section', { ...props, className: 'patrol-box ' + className }, title && h('h2', null, title), children);
   function Field({ label, children }) { return h('label', { className: 'patrol-field' }, h('span', null, label), children); }
   function RecordCard({ item, busy, running, act, hasBackground, embedded = false }) {
     const a = item.analysisStale ? null : item.analysis;
@@ -226,7 +226,15 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
       finally { if (!controller.signal.aborted) setBusy(false); }
     }
     const running = !!state?.activeJob;
+    const [now, setNow] = useState(Date.now());
+    useEffect(() => {
+      if (!running) return;
+      setNow(Date.now()); const timer = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(timer);
+    }, [running]);
     const job = state?.jobs[0];
+    const elapsed = Math.max(0, Math.floor((now - Date.parse(job?.startedAt || new Date(now).toISOString())) / 1000));
+    const runningLabel = job?.mode === 'background' ? '正在阅读背景' : job?.mode === 'evaluate' ? '正在评估示例' : job?.mode === 'scan' ? job.options?.analyze ? '正在采集与分析' : '正在采集' : '正在分析';
     const canContinue = !!job && (['paused', 'cancelled', 'interrupted'].includes(job.status) || job.status === 'partial' && job.analysisDeferred) && job.mode !== 'evaluate';
     const continueLabel = job?.mode === 'analyze' || job?.mode === 'scan' && job.status !== 'paused' && job.options?.analyze && state?.counts.pending > 0 ? '继续分析剩余篇目' : job?.mode === 'scan' ? '继续采集' : '继续任务';
     const route = state?.settings.provider ? state.settings : catalog?.current;
@@ -235,14 +243,16 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('div', { className: 'patrol-native', 'data-patrol-native': true },
       h('div', { className: 'patrol-workbench' },
         h('header', { className: 'patrol-header' }, h('div', null,
-          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.5')),
+          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.6')),
           h(Hint, null, '辅助发现不合理讨论，共同维护讨论与创作环境。')), 
           h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话'))),
         h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查结果'], ['background', '背景阅读'], ['import', '导入文字'], ['settings', '规则与设置'], ['evaluation', '示例评估']].map(([id, label]) =>
           h(Button, { key: id, 'aria-pressed': tab === id, onClick: () => setTab(id) }, label))),
         notice && h('div', { className: 'patrol-notice' + (notice.error ? ' patrol-error' : ''), role: notice.error ? 'alert' : 'status' }, notice.text),
         !state ? h(Box, { title: '正在连接巡查服务…' }, h(Hint, null, '如果连接失败，可刷新 DSH 后重试。')) : h(React.Fragment, null,
-          job && (running || canContinue) && h(Box, { title: statuses[job.status] },
+          job && (running || canContinue) && h(Box, { className: running ? 'patrol-running-task' : '',
+            title: running ? h('span', { className: 'patrol-running-heading' }, h('span', { className: 'patrol-spinner', 'aria-hidden': true }), runningLabel, h('span', { className: 'patrol-running-badge' }, '运行中')) : statuses[job.status] },
+            running && h('p', { className: 'patrol-running-explainer' }, `已运行 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒 · 等待本批结果时，完成数会暂时不变。`),
             h('p', { role: 'status' }, job.message), h(Hint, null, `采集 ${job.collected} · 分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`),
             job.apiRequests > 0 && h(Hint, null, `数据读取 ${job.apiRequests} 次 · 已确认 ¥${(job.apiCostCents / 100).toFixed(2)}${job.apiUnconfirmed ? ` · ${job.apiUnconfirmed} 次费用尚未确认` : ''} · 本轮数据上限 ¥${job.options.apiBudgetYuan}（模型另计）`),
             h('div', { className: 'patrol-actions' }, running && h(Button, { disabled: busy, onClick: () => act('/stop') }, '停止任务'),
@@ -343,7 +353,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.7.6';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,

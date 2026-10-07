@@ -4,7 +4,7 @@
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.7.5</small></strong></div>
+    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.7.6</small></strong></div>
     <nav aria-label="主导航"><button class="nav active" data-tab="results">巡查结果<span>↗</span></button><button class="nav" data-tab="import">导入文字<span>＋</span></button><button class="nav" data-tab="settings">规则与设置<span>⚙</span></button></nav>
     <div class="aside-note"><span class="dot"></span>本机工作台<p>发现具体言行<br>保留原文与上下文<br>看完点击已阅</p></div>
     <a class="back" href="/">← 回到 DSH</a>
@@ -24,7 +24,7 @@
         <div class="actions"><button id="start" class="primary">开始巡查 →</button><button id="analyze">分析未阅讨论</button><button id="stop" class="danger" hidden>停止任务</button><button id="resume" hidden>继续任务</button></div>
         <p id="limits" class="hint"></p><p class="hint">浏览器自动采集已停用。仅使用数据 API 或导入原文；配图保存和机器识别请从 DSH 侧栏巡查面板查看。</p>
       </section>
-      <section id="job-box" class="job box" hidden><div class="section-head"><h2 id="job-status">任务进度</h2><span id="job-counts" class="muted"></span></div><p id="job-message"></p><details><summary>查看任务日志</summary><ol id="job-log"></ol></details></section>
+      <section id="job-box" class="job box" hidden><div class="section-head"><h2><span id="job-spinner" class="job-spinner" aria-hidden="true" hidden></span><span id="job-status">任务进度</span><span id="job-live-badge" class="job-live-badge" hidden>运行中</span></h2><span id="job-counts" class="muted"></span></div><p id="job-waiting" hidden></p><p id="job-message"></p><details><summary>查看任务日志</summary><ol id="job-log"></ol></details></section>
       <div class="result-heading"><h2>内容记录</h2><span id="result-total" class="muted"></span></div>
       <div class="filters" role="group" aria-label="筛选结果"><button data-filter="all" class="selected">未阅</button><button data-filter="suspicious">可疑</button><button data-filter="other">其它</button><button data-filter="unanalyzed">待分析篇目</button><button data-filter="read">已阅</button></div>
       <div id="results" aria-live="polite"></div><div id="pager" class="pager" hidden><button id="prev">← 上一页</button><span id="page-number"></span><button id="next">下一页 →</button></div>

@@ -37,7 +37,11 @@ function settingsForm() {
 }
 async function refresh() {
   state = await api('/status');
-  for (const key of ['total', 'suspicious', 'other', 'pending']) $('count-' + key).textContent = state.counts[key === 'total' ? 'unread' : key];
+  for (const key of ['total', 'suspicious', 'other', 'pending']) {
+    const category = key === 'total' ? 'unread' : key;
+    $('count-' + key).textContent = `${state.counts[category]}篇`;
+    $('count-' + key + '-entries').textContent = `${state.counts.entries?.[category] ?? 0}条`;
+  }
   $('analysis-failures').hidden = !state.counts.analysisFailed;
   $('analysis-failures').textContent = `有 ${state.counts.analysisFailedNotes} 篇中的 ${state.counts.analysisFailed} 条内容分析失败。分析未阅会逐条重试失败项，保留已完成结果；仍会调用模型，费用另计。`;
   const s = state.settings;
@@ -115,7 +119,7 @@ function card(item, embedded = false) {
 function discussionCard(item) {
   const node = el('article', undefined, 'card');
   node.append(el('h3', item.title), el('span', item.inspectionResult === 'suspicious' ? '可疑' : item.inspectionResult === 'other' ? '其它' : '待分析', 'badge'));
-  node.append(el('p', `一篇笔记＋${item.discussionSummary.commentsRead}条已保存评论 · 可疑${item.discussionSummary.suspicious}条 · 待分析${item.discussionSummary.pending}条`));
+  node.append(el('p', `一篇笔记＋${item.discussionSummary.commentsRead}条已保存评论 · 可疑${item.discussionSummary.suspicious}条 · 其它${item.discussionSummary.other}条 · 待分析${item.discussionSummary.pending}条`));
   for (const text of item.discussionSummary.limitations) node.append(el('p', text, 'uncertainties'));
   const detail = el('details'); detail.append(el('summary', '查看正文、配图提示及评论判断'));
   for (const entry of item.entries) detail.append(card(entry, true));

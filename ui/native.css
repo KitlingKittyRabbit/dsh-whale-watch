@@ -4,3 +4,5 @@
 .patrol-native input[type="checkbox"]{width:auto;padding:0;margin:0 6px 0 0;vertical-align:middle;accent-color:#416fac}.patrol-native label:has(>input[type="checkbox"]){display:block;margin:8px 0}
 
 .patrol-background-entry{padding:10px 0;border-bottom:1px solid var(--patrol-line)}.patrol-background-entry:last-child{border-bottom:0}.patrol-box>details{margin:12px 0}.patrol-box>details>summary{font-weight:500}
+
+.patrol-stats .patrol-stat-entries{display:block;font-size:14px;margin-top:2px}

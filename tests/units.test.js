@@ -116,3 +116,33 @@ test('可疑篇目和待分析篇目可重叠，持续失败不能当成其它�
   assert.equal(e.state().counts.other, 0); assert.equal(e.state().counts.analysisFailed, 1);
   assert.equal(c.analysis, null); assert.equal(c.analysisError, '引文不属于本条原文');
 });
+
+test('篇数与条目数分别统计，混合分类、已阅、过期及旧快照不串入当前计数', async t => {
+  const e = await engine(t), p = await e.store.upsert(note(0));
+  const comments = [];
+  for (let n = 0; n < 6; n++) comments.push(await e.store.upsert(comment(0, n)));
+  const second = await e.store.upsert(note(1));
+  // The last saved comment belongs to an older capture, outside this snapshot.
+  p.discussion = { complete: true, sourceKeys: comments.slice(0, 5).map(i => i.sourceKey) };
+  for (const i of [p, ...comments, second]) {
+    i.analysis = normal; i.analysisKey = e.model.cacheKey(i, e.itemOptions(i, e.analysisSettings(e.store.data.settings)));
+  }
+  comments[0].analysis = { ...normal, decision: 'review' };
+  comments[1].analysis = { ...normal, decision: 'uncertain' };
+  comments[2].analysis = null; comments[2].analysisError = '模型超时';
+  comments[3].analysisKey = '旧规则';
+  comments[4].readAt = '已阅'; comments[5].analysis = { ...normal, decision: 'review' };
+  const c = e.state().counts;
+  assert.equal(c.unread, 2); assert.equal(c.suspicious, 1); assert.equal(c.other, 2); assert.equal(c.pending, 1);
+  assert.deepEqual(c.entries, { unread: 6, suspicious: 1, other: 3, pending: 2 });
+  assert.equal(c.entries.unread, c.entries.suspicious + c.entries.other + c.entries.pending);
+  assert.equal(e.results({ filter: 'other' }).total, 2, '其它筛选含有已判其它条目的篇目');
+  const mixed = e.results().items.find(i => i.id === p.id);
+  assert.equal(mixed.inspectionResult, 'suspicious');
+  assert.deepEqual([mixed.discussionSummary.suspicious, mixed.discussionSummary.other, mixed.discussionSummary.pending], [1, 2, 2]);
+  await e.markRead({ id: p.id });
+  assert.deepEqual(e.state().counts.entries, { unread: 1, suspicious: 0, other: 1, pending: 0 });
+  assert.equal(e.state().counts.other, 1); assert.equal(e.results({ filter: 'other' }).total, 1);
+  await e.markRead({ id: p.id, read: false });
+  assert.deepEqual(e.state().counts.entries, { unread: 7, suspicious: 1, other: 4, pending: 2 });
+});

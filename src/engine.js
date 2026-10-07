@@ -28,10 +28,11 @@ export class PatrolEngine {
     const read = entries.every(i => !!i.readAt);
     const activeEntries = read ? entries : entries.filter(i => !i.readAt);
     const suspicious = activeEntries.filter(i => i.inspectionResult === 'suspicious');
+    const other = activeEntries.filter(i => i.inspectionResult === 'other');
     const pending = activeEntries.filter(i => !i.inspectionResult);
     const inspectionResult = suspicious.length ? 'suspicious' : pending.length ? null : 'other';
     const summary = { commentsRead: unit.comments.length, complete: !!unit.records[0].discussion?.complete,
-      limitations: unit.records[0].discussion?.limitations || [], pending: pending.length, suspicious: suspicious.length,
+      limitations: unit.records[0].discussion?.limitations || [], pending: pending.length, suspicious: suspicious.length, other: other.length,
       total: entries.length, standalone: unit.standalone };
     const representative = unit.note || unit.members[0];
     return { ...representative, kind: unit.standalone ? representative.kind : 'discussion', entries,
@@ -41,14 +42,17 @@ export class PatrolEngine {
   unitViews() { return discussionUnits(this.store.data.items).map(unit => this.unitView(unit)); }
   state() {
     const data = this.store.data, units = this.unitViews(), unread = units.filter(i => !i.readAt);
+    const entries = unread.flatMap(i => i.entries.filter(e => !e.readAt));
     const suspicious = unread.filter(i => i.inspectionResult === 'suspicious').length;
     return { settings: data.settings, policy: { version: 'community-environment-v8', contextGuide: CONTEXTUAL_BEHAVIOR_GUIDE }, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: units.length, unread: unread.length, read: units.length - unread.length, review: suspicious, suspicious,
-      other: unread.filter(i => i.inspectionResult === 'other').length,
+      other: unread.filter(i => i.entries.some(e => !e.readAt && e.inspectionResult === 'other')).length,
       uncertain: unread.filter(i => i.entries.some(e => !e.analysisStale && e.analysis?.decision === 'uncertain')).length,
       pending: unread.filter(i => i.entries.some(e => !e.readAt && !e.inspectionResult)).length,
       analysisFailed: unread.reduce((n, i) => n + i.entries.filter(e => !e.readAt && !!e.analysisError).length, 0),
       analysisFailedNotes: unread.filter(i => i.entries.some(e => !e.readAt && !!e.analysisError)).length,
+      entries: { unread: entries.length, suspicious: entries.filter(e => e.inspectionResult === 'suspicious').length,
+        other: entries.filter(e => e.inspectionResult === 'other').length, pending: entries.filter(e => !e.inspectionResult).length },
       records: data.items.length, notes: data.items.filter(i => i.kind === 'note').length, comments: data.items.filter(i => i.kind === 'comment').length,
       discussions: units.filter(i => i.kind === 'discussion').length, standalone: units.filter(i => i.discussionSummary.standalone).length,
       unit: 'discussion',
@@ -61,7 +65,7 @@ export class PatrolEngine {
     const items = this.unitViews().filter(item => archive ? !!item.readAt : !item.readAt &&
       (filter === 'all' || filter === 'unread' || (filter === 'unanalyzed' ? item.entries.some(e => !e.readAt && !e.inspectionResult) :
         filter === 'suspicious' || filter === 'review' ? item.inspectionResult === 'suspicious' :
-        filter === 'other' || filter === 'normal' ? item.inspectionResult === 'other' :
+        filter === 'other' || filter === 'normal' ? item.entries.some(e => !e.readAt && e.inspectionResult === 'other') :
         filter === 'uncertain' && item.entries.some(e => !e.analysisStale && e.analysis?.decision === 'uncertain'))));
     return { total: items.length, unit: 'discussion', items: items.slice(offset, offset + limit) };
   }

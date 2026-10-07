@@ -235,7 +235,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('div', { className: 'patrol-native', 'data-patrol-native': true },
       h('div', { className: 'patrol-workbench' },
         h('header', { className: 'patrol-header' }, h('div', null,
-          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.3')),
+          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.4')),
           h(Hint, null, '辅助发现不合理讨论，共同维护讨论与创作环境。')), 
           h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话'))),
         h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查结果'], ['background', '背景阅读'], ['import', '导入文字'], ['settings', '规则与设置'], ['evaluation', '示例评估']].map(([id, label]) =>
@@ -253,6 +253,8 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h('div', { key: label }, h('span', null, label), h('strong', null, n)))),
             h(Hint, null, `当前保存 ${state.counts.discussions} 篇笔记讨论${state.counts.standalone ? `，另有 ${state.counts.standalone} 条单独导入` : ''}；原始记录共 ${state.counts.records} 条，已归并显示。`),
             h(Hint, null, '按“笔记＋已保存评论区”计篇，一篇内有可疑正文或评论就列为可疑。其它仅表示已读部分的结果；有尚未分析内容时保留待分析状态。已保存的旧评论归入原笔记，未采到的部分不会自动补全。'),
+            h(Hint, null, '“待分析篇目”包括分析失败的篇目；同一篇可以已有可疑内容，同时仍有评论待分析，两项不互斥。'),
+            !!state.counts.analysisFailed && h('p', { className: 'patrol-error' }, `有 ${state.counts.analysisFailedNotes} 篇中的 ${state.counts.analysisFailed} 条内容分析失败。点击“分析未阅篇目”会逐条重试失败项，保留已完成结果；仍会调用模型，费用另计。`),
             h(Box, { title: '采集记录管理' },
               h(Hint, null, '清空正文、评论、分析、已阅记录、对应巡查任务及已查缓存；模型、规则、背景和密钥保留。可撤销最近一次清空。'),
               h('div', { className: 'patrol-actions' },

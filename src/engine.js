@@ -8,7 +8,7 @@ import { hash } from './store.js';
 import { backgroundStartSchema, backgroundUpdateSchema, readingMaterial, backgroundHash, activeBackground, publicProfile, backgroundReadingKey, parseReading } from './background.js';
 
 import { communityBackgroundInfo, createCommunityBackground } from './community-background.js';
-import { discussionHash, DISCUSSION_BATCH_SIZE } from './discussion.js';
+import { discussionHash, discussionBatches } from './discussion.js';
 import { CONTEXTUAL_BEHAVIOR_GUIDE } from './rules.js';
 import { discussionUnits, findUnit } from './units.js';
 
@@ -47,6 +47,8 @@ export class PatrolEngine {
       other: unread.filter(i => i.inspectionResult === 'other').length,
       uncertain: unread.filter(i => i.entries.some(e => !e.analysisStale && e.analysis?.decision === 'uncertain')).length,
       pending: unread.filter(i => i.entries.some(e => !e.readAt && !e.inspectionResult)).length,
+      analysisFailed: unread.reduce((n, i) => n + i.entries.filter(e => !e.readAt && !!e.analysisError).length, 0),
+      analysisFailedNotes: unread.filter(i => i.entries.some(e => !e.readAt && !!e.analysisError)).length,
       records: data.items.length, notes: data.items.filter(i => i.kind === 'note').length, comments: data.items.filter(i => i.kind === 'comment').length,
       discussions: units.filter(i => i.kind === 'discussion').length, standalone: units.filter(i => i.discussionSummary.standalone).length,
       unit: 'discussion',
@@ -251,9 +253,10 @@ export class PatrolEngine {
         if (!force && i.analysis && !i.analysisError && i.analysisKey === this.model.cacheKey(i, settings)) { job.cached++; return false; }
         return true;
       });
-      for (let n = 0; n < pending.length; n += DISCUSSION_BATCH_SIZE) {
-        signal.throwIfAborted(); const targets = pending.slice(n, n + DISCUSSION_BATCH_SIZE); analysisUsed += targets.length;
-        progress(`整篇分析第 ${discussionsUsed} 篇／上限 ${discussionCap}：“${records[0].title}”及${unit.comments.length}条已保存评论，已处理${n}／${pending.length}条`);
+      let processed = 0;
+      for (const targets of discussionBatches(pending)) {
+        signal.throwIfAborted(); analysisUsed += targets.length;
+        progress(`整篇分析第 ${discussionsUsed} 篇／上限 ${discussionCap}：“${records[0].title}”及${unit.comments.length}条已保存评论，已处理${processed}／${pending.length}条；本批${targets.length}条${targets.some(i => i.analysisError) ? '，失败项单独重试' : ''}`);
         let results;
         try { results = await this.model.analyzeDiscussion(records, targets, settings, signal, { onVerification: () => job.verificationCalls++, onDiscussionCall: () => job.discussionCalls++ }); }
         catch (error) { if (signal.aborted) throw error; results = targets.map(i => ({ id: i.id, error: error.message })); }
@@ -263,6 +266,7 @@ export class PatrolEngine {
           if (row?.analysis) { target.analysis = row.analysis; target.analysisKey = this.model.cacheKey(target, settings); target.analysisError = null; job.analyzed++; }
           else { target.analysis = null; target.analysisKey = null; target.analysisError = row?.error || '整篇讨论分析遗漏本条'; job.failed++; }
         }
+        processed += targets.length;
         await this.store.save();
       }
     };

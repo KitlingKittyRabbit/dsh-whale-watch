@@ -6,7 +6,7 @@ import { analysisMaterial, imageContext, parseImageReading, IMAGE_PROMPT } from 
 import { z } from 'zod';
 import { backgroundInput, synthesisInput, parseReading, parseMemo, READING_PROMPT, MEMO_PROMPT } from './background.js';
 import { randomUUID } from 'node:crypto';
-import { DISCUSSION_PROMPT, discussionInput, discussionHash } from './discussion.js';
+import { DISCUSSION_PROMPT, discussionInput, discussionHash, DISCUSSION_TIMEOUT_MS } from './discussion.js';
 
 export class DshModel {
   constructor(ctx) { this.ctx = ctx; this.sessionId = randomUUID(); }
@@ -95,12 +95,19 @@ export class DshModel {
     const environment = backgroundInput(records[0], settings.backgroundContext, targets.some(i => i.backgroundExpanded));
     const materials = targets.map(item => analysisMaterial(item));
     const input = JSON.stringify({ discussion, background: { environment }, targets: materials.map(i => ({ id: i.id, kind: i.kind })) });
-    const combined = AbortSignal.any([signal, AbortSignal.timeout(120000)]), assembler = new BlockAssembler();
+    const timeout = AbortSignal.timeout(DISCUSSION_TIMEOUT_MS);
+    const combined = AbortSignal.any([signal, timeout]), assembler = new BlockAssembler();
     callbacks.onDiscussionCall?.();
-    for await (const chunk of this.ctx.llm.stream({ ...route, system: systemPrompt(settings.rules) + '\n' + DISCUSSION_PROMPT,
-      messages: [createUserMessage({ content: [{ type: 'text', text: input }], source: { kind: 'whale-watch-discussion-analysis' } })],
-      maxTokens: 16384, signal: combined, sessionId: this.sessionId })) { combined.throwIfAborted(); assembler.push(chunk); }
-    combined.throwIfAborted();
+    try {
+      for await (const chunk of this.ctx.llm.stream({ ...route, system: systemPrompt(settings.rules) + '\n' + DISCUSSION_PROMPT,
+        messages: [createUserMessage({ content: [{ type: 'text', text: input }], source: { kind: 'whale-watch-discussion-analysis' } })],
+        maxTokens: 16384, signal: combined, sessionId: this.sessionId })) { combined.throwIfAborted(); assembler.push(chunk); }
+      combined.throwIfAborted();
+    } catch (error) {
+      if (signal.aborted) throw error;
+      if (timeout.aborted || error.name === 'TimeoutError') throw new Error('模型分析超过3分钟，本批未完成；再次分析时失败项会单独重试，已完成结果保留。');
+      throw error;
+    }
     if (assembler.finish.kind !== 'stop') throw new Error(`整篇讨论分析未正常完成：${assembler.finish.kind}，本批结论未采纳`);
     const text = assembler.blocks().filter(b => b.type === 'text').map(b => b.text).join('').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
     const parsed = z.object({ results: z.array(z.object({ id: z.string(), analysis: z.unknown() })).max(10) }).parse(JSON.parse(text));
@@ -119,7 +126,7 @@ export class DshModel {
         analysis.discussionUsed = { noteId: records[0].id, commentsRead: records.length - 1, contextScope: discussion.contextScope,
           omittedComments: discussion.omittedComments || 0, complete: !!records[0].discussion?.complete, hash: discussionHash(records) };
         rows.push({ id: item.id, analysis });
-      } catch (error) { if (signal.aborted) throw error; rows.push({ id: item.id, error: error.message }); }
+      } catch (error) { if (signal.aborted) throw error; rows.push({ id: item.id, error: error.name === 'TimeoutError' ? '证据核对超过90秒，初步指控未采纳；再次分析时本条单独重试。' : error.message }); }
     }
     return rows;
   }

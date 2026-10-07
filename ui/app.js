@@ -38,6 +38,8 @@ function settingsForm() {
 async function refresh() {
   state = await api('/status');
   for (const key of ['total', 'suspicious', 'other', 'pending']) $('count-' + key).textContent = state.counts[key === 'total' ? 'unread' : key];
+  $('analysis-failures').hidden = !state.counts.analysisFailed;
+  $('analysis-failures').textContent = `有 ${state.counts.analysisFailedNotes} 篇中的 ${state.counts.analysisFailed} 条内容分析失败。分析未阅会逐条重试失败项，保留已完成结果；仍会调用模型，费用另计。`;
   const s = state.settings;
   if (catalog) {
     const route = s.provider ? s : catalog.current;
@@ -75,7 +77,7 @@ async function refreshResults(force = false) {
   $('results').replaceChildren();
   if (!result.items.length) {
     const empty = el('div', undefined, 'empty');
-    empty.append(el('div', '◡', 'symbol'), el('strong', total ? '这一页没有记录' : '这里还没有内容'), el('p', state.counts.total ? '切换筛选条件查看其他记录。' : '先登录小红书发起一次巡查，或在“导入文字”中试一段原文。'));
+    empty.append(el('div', '◡', 'symbol'), el('strong', total ? '这一页没有记录' : '这里还没有内容'), el('p', state.counts.total ? '切换筛选条件查看其他记录。' : '配置数据 API 发起一次巡查，或在“导入文字”中试一段原文。'));
     $('results').append(empty);
   }
   for (const item of result.items) $('results').append(card(item));

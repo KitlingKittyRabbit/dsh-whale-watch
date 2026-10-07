@@ -2,8 +2,21 @@ import { hash } from './store.js';
 import { analysisMaterial, imageContext } from './images.js';
 import { findUnit } from './units.js';
 
-export const DISCUSSION_BATCH_SIZE = 10;
+export const DISCUSSION_BATCH_SIZE = 3;
+export const DISCUSSION_TIMEOUT_MS = 180000;
 const MAX_CONTEXT_CHARS = 90000;
+
+// A repeat click must not send the same failed ten-target batch again. Keep
+// context intact; only reduce the number of judgments requested in each call.
+export function discussionBatches(targets) {
+  const batches = []; let batch = [];
+  const flush = () => { if (batch.length) batches.push(batch); batch = []; };
+  for (const item of targets) {
+    if (item.analysisError) { flush(); batches.push([item]); }
+    else { batch.push(item); if (batch.length === DISCUSSION_BATCH_SIZE) flush(); }
+  }
+  flush(); return batches;
+}
 
 export function discussionRecords(item, items) {
   const unit = findUnit(item, items);

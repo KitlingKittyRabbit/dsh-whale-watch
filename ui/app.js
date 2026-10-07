@@ -43,8 +43,9 @@ async function refresh() {
     $('count-' + key + '-entries').textContent = `${state.counts.entries?.[category] ?? 0}条`;
   }
   const pending = state.counts.entries?.pending || 0, failed = state.counts.analysisFailed || 0;
-  $('analysis-failures').hidden = !pending;
-  $('analysis-failures').textContent = `待分析 ${pending} 条 ＝ 仍失败 ${failed} 条 ＋ 尚未完成或需要更新 ${Math.max(0, pending - failed)} 条。补读配图或更新材料、规则、背景后，旧结果需要重新核对。${state.activeJob ? '任务正在继续处理，无需重复点击。' : '分析未阅会重试失败项并更新旧结果；有效结果复用，模型费用另计。'}上方失败数只统计本轮尝试。`;
+  const retained = state.counts.retainedResults || 0;
+  $('analysis-failures').hidden = !pending && !retained;
+  $('analysis-failures').textContent = `待分析 ${pending} 条 ＝ 仍失败 ${failed} 条 ＋ 尚未分析 ${Math.max(0, pending - failed)} 条。保留旧结论 ${retained} 条（材料、规则或模型已变化），不计入待分析，不会自动重算。${state.activeJob ? '任务正在继续处理，无需重复点击。' : '分析未阅只处理尚未分析和失败内容。重新分析整篇才会重算已保存的结果，模型费用另计。'}上方失败数只统计本轮尝试。`;
   const s = state.settings;
   if (catalog) {
     const route = s.provider ? s : catalog.current;
@@ -96,17 +97,18 @@ async function refreshResults(force = false) {
 }
 function card(item, embedded = false) {
   if (item.kind === 'discussion') return discussionCard(item);
-  const analysis = item.analysisStale ? null : item.analysis;
+  const analysis = item.analysis;
   const card = el('article', undefined, 'card ' + (analysis?.decision || ''));
   const head = el('div', undefined, 'card-head');
   const info = el('div'); info.append(el('h3', item.title || '无标题'));
   info.append(el('div', `${item.kind === 'comment' ? '评论' : '笔记'} · ${item.author || (item.coverage?.source === 'manual' ? '手动导入' : '作者未读取')} · ${new Date(item.capturedAt).toLocaleString('zh-CN')}`, 'card-meta'));
-  head.append(info, el('span', analysis ? names[analysis.decision] : '未做模型分析', 'badge')); card.append(head);
+  head.append(info, el('span', analysis ? (item.analysisStale || item.analysisError ? '旧结论 · ' : '') + names[analysis.decision] : '未做模型分析', 'badge')); card.append(head);
   card.append(el('div', item.text || '没有读取到文字；这可能是一篇图片笔记。', 'raw'));
   if (item.url) {
 
     const source = el('a', '手动打开原帖 ↗'); source.href = item.url; source.target = '_blank'; source.rel = 'noopener noreferrer'; card.append(source);
   }
+  if (analysis && (item.analysisStale || item.analysisError)) card.append(el('p', '保留旧结论：尚未依据当前材料、规则与模型重新分析。普通续跑不会重算已成功的结果。', 'hint'));
   if (analysis) {
     const details = el('div', undefined, 'assessment');
     details.append(el('p', analysis.categories.join(' · '), 'categories'), el('p', analysis.reason));
@@ -126,8 +128,10 @@ function discussionCard(item) {
   node.append(el('h3', item.title), el('span', item.inspectionResult === 'suspicious' ? '可疑' : item.inspectionResult === 'other' ? '其它' : '待分析', 'badge'));
   node.append(el('p', `一篇笔记＋${item.discussionSummary.commentsRead}条已保存评论 · 可疑${item.discussionSummary.suspicious}条 · 其它${item.discussionSummary.other}条 · 待分析${item.discussionSummary.pending}条`));
   const pending = item.entries.filter(i => !i.readAt && !i.inspectionResult);
-  const failed = pending.filter(i => i.analysisError).length, stale = pending.filter(i => !i.analysisError && i.analysisStale).length;
-  if (pending.length) node.append(el('p', `待分析组成：${failed}条失败 · ${stale}条旧结果需更新 · ${pending.length - failed - stale}条尚未分析。`, 'hint'));
+  const failed = pending.filter(i => i.analysisError).length;
+  const retained = item.entries.filter(i => !i.readAt && i.analysisStale && i.inspectionResult).length;
+  if (pending.length) node.append(el('p', `待分析组成：${failed}条失败 · ${pending.length - failed}条尚未分析。`, 'hint'));
+  if (retained) node.append(el('p', `${retained}条保留旧结论（材料、规则或模型已变化），不计入待分析，不会自动重算。`, 'hint'));
   for (const text of item.discussionSummary.limitations) node.append(el('p', text, 'uncertainties'));
   const detail = el('details'); detail.append(el('summary', '查看正文、配图提示及评论判断'));
   for (const entry of item.entries) detail.append(card(entry, true));
@@ -135,7 +139,7 @@ function discussionCard(item) {
   const read = el('button', item.readAt ? '整篇恢复未阅' : '整篇已阅');
   read.disabled = !!state.activeJob;
   read.addEventListener('click', () => action(read, '/read', { id: item.id, read: !item.readAt }));
-  const retry = el('button', '按当前规则与背景重新分析整篇'); retry.disabled = !!state.activeJob;
+  const retry = el('button', `重新分析整篇（${item.entries.length}条，模型费用另计）`); retry.disabled = !!state.activeJob;
   retry.addEventListener('click', () => action(retry, '/analyze/item', { id: item.id }));
   node.append(read, retry); return node;
 }

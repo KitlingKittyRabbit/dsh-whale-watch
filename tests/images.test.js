@@ -65,7 +65,10 @@ test('先读取所属配图再分析评论，重跑复用配图，规则变化�
   assert.equal(calls, 1); assert.equal(observed[0][0].kind, 'note'); assert.equal(observed[0][0].vision.pages[0].text, '我反对骚扰'); assert.equal(observed[0][1].coverage.contextImagesUnread, false);
   engine.store.data.settings.rules += '\n补充规则';
   await engine.start({ maxAnalysis: 2 }, 'analyze'); await engine.active.promise;
-  assert.equal(calls, 1); assert.equal(engine.store.data.jobs.at(-1).visionCached, 1); assert.equal(stored.vision.complete, true);
+  assert.equal(calls, 1); assert.equal(engine.store.data.jobs.at(-1).visionCached, 0); assert.equal(stored.vision.complete, true);
+  assert.equal(observed.length, 1, '规则变化后普通续跑不重新调用模型或读取图片');
+  await engine.retry({ id: stored.id }); await engine.active.promise;
+  assert.equal(calls, 1); assert.equal(engine.store.data.jobs.at(-1).visionCached, 1); assert.equal(observed.length, 2);
 });
 test('看图失败也占用额度，剩余笔记标记缺图；仅采集不调用看图', async t => {
   let calls = 0;

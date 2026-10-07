@@ -48,15 +48,22 @@ test('分析对象与问题依据均不能借用上级原文', () => {
   assert.throws(() => parseAnalysis(JSON.stringify(result({ targetQuote: '去骚扰她' })), item), /分析对象引文/);
   assert.throws(() => parseAnalysis(JSON.stringify(result({ targetQuote: '正义补档', evidence: ['正义补档'], findings: [{ category: '骚扰动员', quote: '去骚扰她', target: '她', behavior: '号召骚扰' }] })), item), /问题依据/);
 });
-test('旧规则结论退出当前分类，重新分析保留原文、已阅与历史', async t => {
-  const engine = await fixture(t, {});
+test('旧规则结论保留并注明，普通续跑不重算，明确重算保留原文、已阅与历史', async t => {
+  const engine = await fixture(t, { async *collect() { yield record(); } });
   const item = await engine.store.upsert(record());
   await engine.retry({ id: item.id }); await engine.active.promise;
   assert.equal(engine.state().counts.review, 1);
   engine.store.data.settings.rules += '\n新增语境规则';
-  assert.equal(engine.state().counts.review, 0); assert.equal(engine.state().counts.pending, 1);
-  assert.equal(engine.results({ filter: 'review' }).total, 0);
-  assert.equal(engine.results({ filter: 'unanalyzed' }).items[0].analysisStale, true);
+  assert.equal(engine.state().counts.review, 1); assert.equal(engine.state().counts.pending, 0);
+  assert.equal(engine.results({ filter: 'review' }).items[0].analysisStale, true);
+  assert.equal(engine.results({ filter: 'unanalyzed' }).total, 0);
+  const saved = item.analysis, savedKey = item.analysisKey;
+  await engine.start({}, 'analyze'); await engine.active.promise;
+  assert.equal(engine.store.data.jobs.at(-1).analyzed, 0);
+  assert.equal(item.analysis, saved); assert.equal(item.analysisKey, savedKey);
+  await engine.start({ readImages: false }); await engine.active.promise;
+  assert.equal(engine.store.data.jobs.at(-1).analyzed, 0);
+  assert.equal(item.analysis, saved); assert.equal(item.analysisKey, savedKey);
   await engine.markRead({ id: item.id });
   await engine.retry({ id: item.id }); await engine.active.promise;
   assert.equal(item.history.length, 1); assert.equal(item.history[0].reason, '重新分析');
@@ -253,7 +260,7 @@ test('重试指定失败记录只分析该条，保留已阅状态，不处理�
   await assert.rejects(engine.retry({ id: 'missing' }), /没有找到/);
 });
 
-test('可疑与其它只统计当前已分析结果；材料不足保留原因，待分析和已阅不混入', async t => {
+test('可疑与其它保留旧结论并注明；材料不足保留原因，未分析和已阅不混入', async t => {
   const engine = await fixture(t, {});
   const rows=[]; for(let n=200;n<205;n++) rows.push(await engine.store.upsert(record(n)));
   for(const [index,decision] of ['review','normal','uncertain'].entries()) {
@@ -262,11 +269,12 @@ test('可疑与其它只统计当前已分析结果；材料不足保留原因�
   }
   rows[3].analysis=result(); rows[3].analysisKey='旧规则';
   await engine.markRead({id:rows[4].id});
-  assert.equal(engine.state().counts.suspicious,1); assert.equal(engine.state().counts.other,2); assert.equal(engine.state().counts.pending,1);
-  assert.deepEqual(engine.results({filter:'suspicious'}).items.map(i=>i.id),[rows[0].id]);
+  assert.equal(engine.state().counts.suspicious,2); assert.equal(engine.state().counts.other,2); assert.equal(engine.state().counts.pending,0);
+  assert.equal(engine.state().counts.retainedResults,1);
+  assert.deepEqual(engine.results({filter:'suspicious'}).items.map(i=>i.id),[rows[3].id,rows[0].id]);
   const others=engine.results({filter:'other'}); assert.equal(others.total,2); assert.ok(others.items.every(i=>i.inspectionResult==='other'));
   assert.equal(others.items.find(i=>i.id===rows[2].id).analysis.reason,'缺少关键配图');
-  assert.equal(engine.results({filter:'unanalyzed'}).items[0].inspectionResult,null);
+  assert.equal(engine.results({filter:'unanalyzed'}).total,0);
 });
 
 test('停止的分析可继续，成功结果与已阅保留，只补剩余内容且遵守原每轮上限', async t => {

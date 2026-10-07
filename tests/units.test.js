@@ -46,11 +46,14 @@ test('旧采样分析用正文和全部已保存评论，篇数上限不在中�
   assert.equal(calls.length, perNote * 2); assert.equal(e.state().counts.pending, 0);
   assert.equal(e.store.data.jobs.at(-1).cached, 23);
 });
-test('旧评论改变使整篇判断失效；重试一条实际重试所属整篇，不碰其它篇', async t => {
+test('旧评论改变注明整篇材料变化而不自动重算；明确重算只涉及所属整篇', async t => {
   const calls = [], e = await engine(t, calls);
   const parent = await e.store.upsert(note(0)); const c = await e.store.upsert(comment(0, 1)); await e.store.upsert(note(1));
   await e.start({ discussionNoteLimit: 2, readImages: false }, 'analyze'); await e.active.promise;
-  c.text = '更新的评论'; assert.equal(e.isStale(parent), true); assert.equal(e.state().counts.pending, 1);
+  c.text = '更新的评论'; assert.equal(e.isStale(parent), true); assert.equal(e.state().counts.pending, 0);
+  const previousCalls = calls.length;
+  await e.start({ readImages: false }, 'analyze'); await e.active.promise;
+  assert.equal(calls.length, previousCalls);
   await e.retry({ id: c.id }); await e.active.promise;
   assert.deepEqual(calls.at(-1).targets.sort(), [parent.id, c.id].sort()); assert.equal(e.state().counts.pending, 0);
 });
@@ -117,7 +120,7 @@ test('可疑篇目和待分析篇目可重叠，持续失败不能当成其它�
   assert.equal(c.analysis, null); assert.equal(c.analysisError, '引文不属于本条原文');
 });
 
-test('篇数与条目数分别统计，混合分类、已阅、过期及旧快照不串入当前计数', async t => {
+test('篇数与条目数分别统计，保留旧判断，已阅及旧快照不串入当前计数', async t => {
   const e = await engine(t), p = await e.store.upsert(note(0));
   const comments = [];
   for (let n = 0; n < 6; n++) comments.push(await e.store.upsert(comment(0, n)));
@@ -134,15 +137,85 @@ test('篇数与条目数分别统计，混合分类、已阅、过期及旧快�
   comments[4].readAt = '已阅'; comments[5].analysis = { ...normal, decision: 'review' };
   const c = e.state().counts;
   assert.equal(c.unread, 2); assert.equal(c.suspicious, 1); assert.equal(c.other, 2); assert.equal(c.pending, 1);
-  assert.deepEqual(c.entries, { unread: 6, suspicious: 1, other: 3, pending: 2 });
+  assert.deepEqual(c.entries, { unread: 6, suspicious: 1, other: 4, pending: 1 });
   assert.equal(c.entries.unread, c.entries.suspicious + c.entries.other + c.entries.pending);
   assert.equal(e.results({ filter: 'other' }).total, 2, '其它筛选含有已判其它条目的篇目');
   const mixed = e.results().items.find(i => i.id === p.id);
   assert.equal(mixed.inspectionResult, 'suspicious');
-  assert.deepEqual([mixed.discussionSummary.suspicious, mixed.discussionSummary.other, mixed.discussionSummary.pending], [1, 2, 2]);
+  assert.deepEqual([mixed.discussionSummary.suspicious, mixed.discussionSummary.other, mixed.discussionSummary.pending], [1, 3, 1]);
   await e.markRead({ id: p.id });
   assert.deepEqual(e.state().counts.entries, { unread: 1, suspicious: 0, other: 1, pending: 0 });
   assert.equal(e.state().counts.other, 1); assert.equal(e.results({ filter: 'other' }).total, 1);
   await e.markRead({ id: p.id, read: false });
-  assert.deepEqual(e.state().counts.entries, { unread: 7, suspicious: 1, other: 4, pending: 2 });
+  assert.deepEqual(e.state().counts.entries, { unread: 7, suspicious: 1, other: 5, pending: 1 });
+});
+
+test('失败重试期间补读图片只重试原失败条目，不扩大到整篇旧结论，保留完整新语境', async t => {
+  const calls = [], e = await engine(t, calls);
+  const p = await e.store.upsert({ ...note(0), coverage: { imageCount: 1 } });
+  const c = await e.store.upsert(comment(0, 1)), f = await e.store.upsert(comment(0, 2));
+  await e.start({ readImages: false }, 'analyze'); await e.active.promise;
+  f.analysis = null; f.analysisError = '超时';
+  const completed = [p,c].map(i => ({ item:i, analysis:i.analysis, key:i.analysisKey })), before = calls.length;
+  e.model.readImages = async () => ({ pages: [{ index: 1, text: '新配图内容' }], complete: true });
+  await e.start({ readImages: true }, 'analyze'); await e.active.promise;
+  assert.equal(calls.length, before + 1);
+  assert.deepEqual(calls.at(-1).targets, [f.id]);
+  assert.equal(calls.at(-1).records.length, 3);
+  assert.equal(calls.at(-1).records[0].vision.pages[0].text, '新配图内容');
+  for (const i of completed) { assert.equal(i.item.analysis,i.analysis); assert.equal(i.item.analysisKey,i.key); }
+  assert.equal(e.state().counts.pending, 0); assert.equal(e.state().counts.retainedResults, 2);
+  assert.equal(e.store.data.jobs.at(-1).analyzed, 1);
+  await e.start({ readImages: true }, 'analyze'); await e.active.promise;
+  assert.equal(calls.length, before + 1);
+});
+
+test('新增评论与背景规则变化不扩大分析范围，明确重算才处理已有结论', async t => {
+  const calls = [], e = await engine(t, calls);
+  const p = await e.store.upsert(note(0)); const c = await e.store.upsert(comment(0,1));
+  await e.start({ readImages: false }, 'analyze'); await e.active.promise;
+  const previous = [p,c].map(i => ({ item:i, analysis:i.analysis, key:i.analysisKey }));
+  const extra = await e.store.upsert(comment(0,2));
+  e.store.data.settings.rules += '\n修改规则';
+  const before = calls.length;
+  await e.start({ readImages: false }, 'analyze'); await e.active.promise;
+  assert.equal(calls.length,before+1); assert.deepEqual(calls.at(-1).targets,[extra.id]);
+  assert.equal(calls.at(-1).records.length,3);
+  for (const i of previous) { assert.equal(i.item.analysis,i.analysis); assert.equal(i.item.analysisKey,i.key); }
+  assert.equal(e.state().counts.pending,0);
+  await e.retry({ id:p.id }); await e.active.promise;
+  assert.deepEqual(calls.at(-1).targets.sort(),[p.id,c.id,extra.id].sort());
+  assert.equal(e.state().counts.retainedResults,0);
+});
+
+test('明确整篇重算失败时保留旧结论及原缓存键，失败仍待分析；下轮只重试失败项', async t => {
+  const calls = [], e = await engine(t,calls);
+  const p = await e.store.upsert(note(0)), c = await e.store.upsert(comment(0,1));
+  await e.start({ readImages:false }, 'analyze'); await e.active.promise;
+  const previous = { analysis:c.analysis, key:c.analysisKey };
+  e.store.data.settings.rules += '\n改动';
+  const original = e.model.analyzeDiscussion;
+  e.model.analyzeDiscussion = async (records,targets) => (await original(records,targets)).map(r=>r.id===c.id?{id:r.id,error:'引文不符'}:r);
+  await e.retry({id:p.id}); await e.active.promise;
+  assert.equal(c.analysis,previous.analysis); assert.equal(c.analysisKey,previous.key);
+  assert.equal(c.analysisError,'引文不符'); assert.equal(e.state().counts.entries.pending,1);
+  e.model.analyzeDiscussion = original;
+  await e.start({readImages:false},'analyze'); await e.active.promise;
+  assert.deepEqual(calls.at(-1).targets,[c.id]); assert.equal(c.analysisError,null);
+});
+
+test('继续明确重算任务仍只处理未完成项，不重算成功项、不扩到其它篇，保留已阅状态', async t => {
+  const calls = [], e = await engine(t,calls);
+  const p = await e.store.upsert(note(0)), c = await e.store.upsert(comment(0,1));
+  await e.store.upsert(note(1));
+  await e.retry({id:p.id}); await e.active.promise;
+  await e.markRead({id:p.id});
+  c.analysisError = '重算失败';
+  const old = e.store.data.jobs.at(-1); old.status = 'cancelled';
+  const before = calls.length, saved = p.analysis;
+  await e.resume({jobId:old.id}); await e.active.promise;
+  assert.equal(calls.length,before+1); assert.deepEqual(calls.at(-1).targets,[c.id]);
+  assert.equal(calls.at(-1).records.length,2); assert.equal(p.analysis,saved);
+  assert.ok(p.readAt); assert.ok(c.readAt);
+  assert.equal(e.store.data.items.find(i=>i.sourceKey===note(1).sourceKey).analysis,null);
 });

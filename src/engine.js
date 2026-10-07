@@ -23,7 +23,9 @@ export class PatrolEngine {
     if (!unit.standalone) settings.discussionHash = discussionHash(unit.records);
     const entries = unit.members.map(({ history, ...item }) => {
       const analysisStale = !!item.analysis && !!this.model.cacheKey && item.analysisKey !== this.model.cacheKey(item, settings);
-      return { ...item, analysisStale, inspectionResult: !item.analysis || analysisStale ? null : item.analysis.decision === 'review' ? 'suspicious' : 'other' };
+      // Changed context is informational. Only a missing/failed result enters
+      // the ordinary queue; recomputing a saved result requires an explicit retry.
+      return { ...item, analysisStale, inspectionResult: !item.analysis || item.analysisError ? null : item.analysis.decision === 'review' ? 'suspicious' : 'other' };
     });
     const read = entries.every(i => !!i.readAt);
     const activeEntries = read ? entries : entries.filter(i => !i.readAt);
@@ -47,10 +49,11 @@ export class PatrolEngine {
     return { settings: data.settings, policy: { version: 'community-environment-v8', contextGuide: CONTEXTUAL_BEHAVIOR_GUIDE }, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: units.length, unread: unread.length, read: units.length - unread.length, review: suspicious, suspicious,
       other: unread.filter(i => i.entries.some(e => !e.readAt && e.inspectionResult === 'other')).length,
-      uncertain: unread.filter(i => i.entries.some(e => !e.analysisStale && e.analysis?.decision === 'uncertain')).length,
+      uncertain: unread.filter(i => i.entries.some(e => e.inspectionResult === 'other' && e.analysis?.decision === 'uncertain')).length,
       pending: unread.filter(i => i.entries.some(e => !e.readAt && !e.inspectionResult)).length,
       analysisFailed: unread.reduce((n, i) => n + i.entries.filter(e => !e.readAt && !!e.analysisError).length, 0),
       analysisFailedNotes: unread.filter(i => i.entries.some(e => !e.readAt && !!e.analysisError)).length,
+      retainedResults: entries.filter(e => e.analysisStale && !!e.inspectionResult).length,
       entries: { unread: entries.length, suspicious: entries.filter(e => e.inspectionResult === 'suspicious').length,
         other: entries.filter(e => e.inspectionResult === 'other').length, pending: entries.filter(e => !e.inspectionResult).length },
       records: data.items.length, notes: data.items.filter(i => i.kind === 'note').length, comments: data.items.filter(i => i.kind === 'comment').length,
@@ -66,7 +69,7 @@ export class PatrolEngine {
       (filter === 'all' || filter === 'unread' || (filter === 'unanalyzed' ? item.entries.some(e => !e.readAt && !e.inspectionResult) :
         filter === 'suspicious' || filter === 'review' ? item.inspectionResult === 'suspicious' :
         filter === 'other' || filter === 'normal' ? item.entries.some(e => !e.readAt && e.inspectionResult === 'other') :
-        filter === 'uncertain' && item.entries.some(e => !e.analysisStale && e.analysis?.decision === 'uncertain'))));
+        filter === 'uncertain' && item.entries.some(e => e.inspectionResult === 'other' && e.analysis?.decision === 'uncertain'))));
     return { total: items.length, unit: 'discussion', items: items.slice(offset, offset + limit) };
   }
   evaluation() { return this.store.data.evaluation || null; }
@@ -141,13 +144,13 @@ export class PatrolEngine {
     const settings = this.store.data.settings;
     return { ...settings, ...requested, urls, keywords: urls.length && !requested.keywords ? [] : requested.keywords || settings.keywords, analyze: requested.analyze ?? true };
   }
-  async start(input = {}, mode = 'scan', backgroundPlan = null) {
+  async start(input = {}, mode = 'scan', backgroundPlan = null, resumeOnlyPending = false) {
     if (this.active) throw new Error('已有任务运行中，请先停止或等待完成');
     const options = this.analysisSettings(this.options(input));
     const needsCollection = mode === 'scan' || mode === 'background' && (backgroundPlan?.source !== 'existing' || backgroundPlan?.refreshSources && backgroundPlan?.urls?.length);
     if (needsCollection && options.collectionSource !== 'socialdatax') throw new Error(BROWSER_DISABLED_MESSAGE);
     if (needsCollection && !this.apiCollector?.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key，或导入原文进行离线分析');
-    const job = { id: randomUUID(), mode, status: 'running', startedAt: new Date().toISOString(),
+    const job = { id: randomUUID(), mode, resumeOnlyPending, status: 'running', startedAt: new Date().toISOString(),
       options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
     this.store.data.jobs.push(job);
     this.store.data.jobs = this.store.data.jobs.slice(-100);
@@ -205,12 +208,12 @@ export class PatrolEngine {
     const process = async item => {
       signal.throwIfAborted();
       if (!options.analyze || (item.readAt && !mode.startsWith('item:'))) return;
-      // Continuing analysis must skip finished items before any repeated image work.
-      if (mode === 'analyze' && item.analysis && !item.analysisError && !this.isStale(item)) { job.cached++; return; }
+      // Ordinary runs never broaden into recomputing saved conclusions, even
+      // when images, background, rules or the selected model have changed.
+      if ((!mode.startsWith('item:') || job.resumeOnlyPending) && item.analysis && !item.analysisError) { job.cached++; return; }
       if (standaloneUsed < options.maxAnalysis) { await prepareImages(item); await prepareContext(item); }
       if (options.backgroundExpanded !== undefined) item.backgroundExpanded = options.backgroundExpanded;
       const key = this.model.cacheKey(item, options);
-      if (item.analysis && item.analysisKey === key && !mode.startsWith('item:')) { job.cached++; return; }
       if (!options.analyze || standaloneUsed >= options.maxAnalysis) return;
       if (item.analysis) item.history = [...(item.history || []), { text: item.text, analysis: item.analysis, review: item.review, readAt: item.readAt, at: new Date().toISOString(), reason: '重新分析' }].slice(-5);
       analysisUsed++; standaloneUsed++;
@@ -225,8 +228,8 @@ export class PatrolEngine {
         if (signal.aborted) throw error;
         job.failed++; item.analysisError = error.message;
         progress(`分析失败：${error.message}`);
-        // An outdated result must not look like the output of the current rubric/model.
-        item.analysis = null; item.analysisKey = null;
+        // Keep a previous conclusion on failed explicit recomputation. The
+        // error remains pending and the UI identifies the saved conclusion.
       }
       await this.store.save();
     };
@@ -237,11 +240,14 @@ export class PatrolEngine {
       if (processedDiscussions.has(unit.key)) return; processedDiscussions.add(unit.key);
       if (!options.analyze) return;
       if (!this.model.analyzeDiscussion) throw new Error('当前模型适配器不支持整篇讨论分析');
-      const candidates = unit.members.filter(i => force || !i.readAt);
+      const candidates = unit.members.filter(i => mode.startsWith('item:') || !i.readAt);
       if (!candidates.length) return;
       let records = unit.records;
-      const beforeImages = { ...options, discussionHash: discussionHash(records) };
-      if (!force && candidates.every(i => i.analysis && !i.analysisError && i.analysisKey === this.model.cacheKey(i, beforeImages))) { job.cached += candidates.length; return; }
+      const pending = candidates.filter(i => {
+        if (!force && i.analysis && !i.analysisError) { job.cached++; return false; }
+        return true;
+      });
+      if (!pending.length) return;
       if (discussionsUsed >= discussionCap) { job.analysisDeferred = true; return; }
       discussionsUsed++; job.discussionsAttempted = discussionsUsed;
       for (const record of unit.members) await prepareImages(record);
@@ -252,11 +258,9 @@ export class PatrolEngine {
         discussionIncomplete: !records[0].discussion?.complete };
       unit = findUnit(item, this.store.data.items); records = unit.records;
       const settings = { ...options, discussionHash: discussionHash(records) };
-      const pending = candidates.filter(i => {
+      for (const i of pending) {
         if (options.backgroundExpanded !== undefined) i.backgroundExpanded = options.backgroundExpanded;
-        if (!force && i.analysis && !i.analysisError && i.analysisKey === this.model.cacheKey(i, settings)) { job.cached++; return false; }
-        return true;
-      });
+      }
       let processed = 0;
       for (const targets of discussionBatches(pending)) {
         signal.throwIfAborted(); analysisUsed += targets.length;
@@ -268,7 +272,7 @@ export class PatrolEngine {
           const row = results.find(r => r.id === target.id);
           if (target.analysis) target.history = [...(target.history || []), { text: target.text, analysis: target.analysis, review: target.review, images: target.images, vision: target.vision, readAt: target.readAt, at: new Date().toISOString(), reason: '结合整篇讨论重新分析' }].slice(-5);
           if (row?.analysis) { target.analysis = row.analysis; target.analysisKey = this.model.cacheKey(target, settings); target.analysisError = null; job.analyzed++; }
-          else { target.analysis = null; target.analysisKey = null; target.analysisError = row?.error || '整篇讨论分析遗漏本条'; job.failed++; }
+          else { target.analysisError = row?.error || '整篇讨论分析遗漏本条'; job.failed++; }
         }
         processed += targets.length;
         await this.store.save();
@@ -320,7 +324,7 @@ export class PatrolEngine {
       } else {
         const candidates = mode.startsWith('item:') ? this.store.data.items.filter(i => i.id === mode.slice(5)) : [...this.store.data.items];
         candidates.sort((a, b) => (a.kind === 'note' ? 0 : 1) - (b.kind === 'note' ? 0 : 1));
-        for (const item of candidates) await processDiscussion(item, mode.startsWith('item:'));
+        for (const item of candidates) await processDiscussion(item, mode.startsWith('item:') && !job.resumeOnlyPending);
       }
       job.status = job.skippedNotes.length || job.failed || job.imagesMissing || job.discussionGaps.length || job.apiStopReason || job.analysisDeferred ? 'partial' : 'completed';
       const deferred = job.analysisDeferred ? '达到本轮按篇分析上限，剩余篇目可继续分析。' : '';
@@ -445,8 +449,8 @@ export class PatrolEngine {
     const options = { ...(urls?.length ? { urls } : keywords?.length ? { keywords } : {}), maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit };
     // Stopped scans may already have saved records that their seen-note cache would skip.
     const mode = job.mode === 'scan' && job.status !== 'paused' && analyze && this.state().counts.pending > 0 ? 'analyze' : job.mode;
-    const result = await this.start(options, mode, job.backgroundPlan);
-    return { ...result, message: mode === 'analyze' ? '已继续分析未完成内容，跳过已阅和当前规则下已完成的分析；仍遵守每轮上限。' : mode === 'scan' ? '已按原范围继续采集；已查笔记去重，已有分析可复用。' : '任务已继续，已保存的结果保留。' };
+    const result = await this.start(options, mode, job.backgroundPlan, true);
+    return { ...result, message: mode === 'analyze' || mode.startsWith('item:') ? '已继续分析尚未分析和失败内容，已有成功结论不会重算；仍遵守原范围和每轮上限。' : mode === 'scan' ? '已按原范围继续采集；已查笔记去重，已有成功结论不会重算。' : '任务已继续，已保存的结果保留。' };
   }
   async import(input) {
     if (this.active) throw new Error('请等当前任务结束后再导入');

@@ -23,7 +23,7 @@ export class DshModel {
     }));
     return { current, providers: models, mode: 'dsh' };
   }
-  cacheKey(item, settings) { const key = [item.contentHash, item.context, item.vision, item.coverage, settings.rules, this.selection(settings), 'prompt-v8-discussion-units']; if (settings.backgroundContext) key.push(settings.backgroundContext.hash, !!item.backgroundExpanded); if (settings.discussionHash) key.push(settings.discussionHash, 'discussion-v1'); return hash(JSON.stringify(key)); }
+  cacheKey(item, settings) { const key = [item.contentHash, item.context, item.vision, item.coverage, settings.rules, this.selection(settings), 'prompt-v9-context-files', settings.topicContext?.hash || null]; if (settings.backgroundContext) key.push(settings.backgroundContext.hash, !!item.backgroundExpanded); if (settings.discussionHash) key.push(settings.discussionHash, 'discussion-v1'); return hash(JSON.stringify(key)); }
   visionSelection(settings) {
     return settings.visionProvider ? { provider: settings.visionProvider, model: settings.visionModel } : this.selection(settings);
   }
@@ -71,7 +71,7 @@ export class DshModel {
     const route = this.selection(settings);
     const assembler = new BlockAssembler();
     const material = analysisMaterial(item);
-    const input = JSON.stringify({ target: { kind: material.kind, text: material.text, title: material.kind === 'note' ? material.title : undefined, images: material.kind === 'note' ? imageContext(item) : undefined }, background: { environment: backgroundInput(item, settings.backgroundContext, item.backgroundExpanded), noteTitle: material.kind === 'comment' ? material.title : undefined, context: material.context }, coverage: material.coverage });
+    const input = JSON.stringify({ target: { kind: material.kind, text: material.text, title: material.kind === 'note' ? material.title : undefined, images: material.kind === 'note' ? imageContext(item) : undefined }, background: { topic: settings.topicContext || null, environment: backgroundInput(item, settings.backgroundContext, item.backgroundExpanded), noteTitle: material.kind === 'comment' ? material.title : undefined, context: material.context }, coverage: material.coverage });
     const timeout = AbortSignal.timeout(90000);
     const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
     for await (const chunk of this.ctx.llm.stream({ ...route, system: systemPrompt(settings.rules),
@@ -94,7 +94,7 @@ export class DshModel {
     const discussion = discussionInput(records, targets);
     const environment = backgroundInput(records[0], settings.backgroundContext, targets.some(i => i.backgroundExpanded));
     const materials = targets.map(item => analysisMaterial(item));
-    const input = JSON.stringify({ discussion, background: { environment }, targets: materials.map(i => ({ id: i.id, kind: i.kind })) });
+    const input = JSON.stringify({ discussion, background: { topic: settings.topicContext || null, environment }, targets: materials.map(i => ({ id: i.id, kind: i.kind })) });
     const timeout = AbortSignal.timeout(DISCUSSION_TIMEOUT_MS);
     const combined = AbortSignal.any([signal, timeout]), assembler = new BlockAssembler();
     callbacks.onDiscussionCall?.();
@@ -119,7 +119,7 @@ export class DshModel {
       signal.throwIfAborted(); const row = parsed.results.find(r => r.id === item.id);
       const target = analysisMaterial(item);
       const ownInput = JSON.stringify({ target: { kind: target.kind, text: target.text, title: target.title, images: imageContext(item) },
-        background: { environment, discussion }, coverage: target.coverage });
+        background: { topic: settings.topicContext || null, environment, discussion }, coverage: target.coverage });
       try {
         const checkSignal = AbortSignal.any([signal, AbortSignal.timeout(90000)]);
         const analysis = await this.finishAnalysis(item, settings, checkSignal, { output: JSON.stringify(row.analysis), input: ownInput, route, usage: null }, callbacks);
@@ -163,6 +163,6 @@ export class DshModel {
       result.verification = { ...verified, proposedCategories: proposed.categories, proposedReason: proposed.reason, proposedFindings: proposed.findings, route, usage: check.usage || null };
     }
     const evidenceSources = result.evidence.map(quote => item.text.includes(quote) ? '正文' : item.kind === 'note' && item.title?.includes(quote) ? '标题' : `配图${item.vision?.pages?.find(p => p.text.includes(quote))?.index || '?'}机器识别文字，须核对原图`);
-    return { ...result, evidenceSources, backgroundUsed: settings.backgroundContext ? { id: settings.backgroundContext.id, hash: settings.backgroundContext.hash, articlesRead: settings.backgroundContext.readings.length, sourceRefs: JSON.parse(input).background.environment.references.map(r => r.ref), expanded: !!item.backgroundExpanded } : null, policyVersion: 'community-environment-v8', route, analyzedAt: new Date().toISOString(), usage: usage || null };
+    return { ...result, evidenceSources, contextUsed: settings.topicContext ? { id: settings.topicContext.id, name: settings.topicContext.name, hash: settings.topicContext.hash } : null, backgroundUsed: settings.backgroundContext ? { id: settings.backgroundContext.id, hash: settings.backgroundContext.hash, articlesRead: settings.backgroundContext.readings.length, sourceRefs: JSON.parse(input).background.environment.references.map(r => r.ref), expanded: !!item.backgroundExpanded } : null, policyVersion: 'community-environment-v8', route, analyzedAt: new Date().toISOString(), usage: usage || null };
   }
 }

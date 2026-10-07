@@ -6,6 +6,7 @@ import { DisabledBrowser } from './disabled-browser.js';
 import { DshModel } from './model.js';
 import { PatrolEngine } from './engine.js';
 import { createHandler, PANEL_PATH } from './http.js';
+import { CONTEXT_BUILDER_PROMPT } from './topic-context.js';
 import { AGENT_PROMPT } from './rules.js';
 import { SocialDataX } from './socialdatax.js';
 
@@ -32,4 +33,12 @@ export async function apply(ctx, config = {}) {
     ],
   });
   ctx.effect(() => unregister, 'patrol preset');
+  const unregisterBuilder = await ctx.agentPresets.register({
+    id: 'whale-watch-context-builder', name: '鲸声守望配置制作助手', description: '帮助整理专题背景、黑话和术语，生成可下载的配置草稿', order: 6,
+    plugins: [
+      { name: '@deepseek-ai/dsh-persona', config: { prefix: CONTEXT_BUILDER_PROMPT, suffix: '', complete: false } },
+      { name: fileURLToPath(new URL('./context-agent.js', import.meta.url)) },
+    ],
+  });
+  ctx.effect(() => unregisterBuilder, 'context builder preset');
 }

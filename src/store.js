@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DEFAULT_RULES } from './rules.js';
+import { BUILTIN_DS_CONTEXT, loadedContext } from './topic-context.js';
 import { DEFAULT_SEARCH_SETTINGS } from './search-options.js';
 export const hash = text => createHash('sha256').update(text).digest('hex');
 export const defaultSettings = () => ({ ...DEFAULT_SEARCH_SETTINGS, collectionSource: 'socialdatax', apiBudgetYuan: 5, discussionAnalysisLimit: 500, discussionNoteLimit: 5, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
@@ -14,9 +15,11 @@ export class Store {
   constructor(root) { this.root = root; this.path = join(root, 'state.json'); this.queue = Promise.resolve(); }
   async init() {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
+    let existing = true;
     try { this.data = JSON.parse(await readFile(this.path, 'utf8')); }
     catch (error) {
       if (error.code !== 'ENOENT') throw new Error('巡查数据文件无法读取，请保留原文件检查，未覆盖旧数据');
+      existing = false;
       this.data = { version: 1, settings: defaultSettings(), items: [], jobs: [] };
     }
     if (this.data.version !== 1 || !Array.isArray(this.data.items) || !Array.isArray(this.data.jobs)) throw new Error('巡查数据格式不受支持');
@@ -29,6 +32,9 @@ export class Store {
     }
     for (const item of this.data.items) if (!Object.hasOwn(item, 'readAt')) item.readAt = ['confirmed', 'dismissed', 'uncertain'].includes(item.review?.verdict) ? item.review.at || item.capturedAt || new Date().toISOString() : null;
     if (!this.data.background) this.data.background = { enabled: true, active: null, draft: null, history: [] };
+    // Older releases always supplied DS terminology. Preserve that environment
+    // without replacing the user's background, rules, or saved analyses.
+    if (!this.data.context) this.data.context = { active: existing ? loadedContext(BUILTIN_DS_CONTEXT, 'legacy') : null, draft: null, previous: null };
     // Migrate once. An explicitly empty cache must stay empty after a restart.
     if (!Object.hasOwn(this.data, 'seenCache')) this.data.seenCache = {
       ids: [...new Set(this.data.items.map(collectedNoteId).filter(Boolean))], clearedAt: null, previousIds: null,

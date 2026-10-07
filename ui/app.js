@@ -15,9 +15,9 @@ const split = text => text.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
 function el(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
 function tab(name) {
   activeTab = name;
-  for (const t of ['results', 'settings', 'import']) $('tab-' + t).hidden = t !== name;
+  for (const t of ['results', 'settings', 'import', 'context']) $('tab-' + t).hidden = t !== name;
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === name));
-  $('page-title').textContent = { results: '巡查结果', settings: '规则与设置', import: '导入文字' }[name];
+  $('page-title').textContent = { results: '巡查结果', settings: '规则与设置', import: '导入文字', context: '背景与术语' }[name];
 }
 function fillModels() {
   const provider = $('provider').value;
@@ -56,6 +56,7 @@ async function refresh() {
   const retained = state.counts.retainedResults || 0;
   $('analysis-failures').hidden = !pending && !retained;
   $('analysis-failures').textContent = `待分析 ${pending} 条 ＝ 仍失败 ${failed} 条 ＋ 尚未分析 ${Math.max(0, pending - failed)} 条。保留旧结论 ${retained} 条（材料、规则或模型已变化），不计入待分析，不会自动重算。${state.activeJob ? '任务正在继续处理，无需重复点击。' : '分析未阅只处理尚未分析和失败内容。重新分析整篇才会重算已保存的结果，模型费用另计。'}上方失败数只统计本轮尝试。`;
+  renderContext();
   const s = state.settings;
   if (catalog) {
     const route = s.provider ? s : catalog.current;
@@ -201,3 +202,16 @@ setInterval(async () => { if (document.hidden || refreshing) return; refreshing 
 
 $('clear-collection').addEventListener('click', () => action($('clear-collection'), '/collection/clear'));
 $('restore-collection').addEventListener('click', () => action($('restore-collection'), '/collection/restore'));
+
+function renderContext() {
+  const c = state.context, running = !!state.activeJob;
+  $('context-current').textContent = c.active ? `当前：${c.active.name} · ${c.active.glossary.length}个术语` : '尚未载入专题配置';
+  $('context-undo').hidden = !c.canUndo; $('context-unload').hidden = !c.active && !c.hasBackground;
+  for (const id of ['context-builtin', 'context-file', 'context-json', 'context-import', 'context-validate', 'context-undo', 'context-unload', 'context-apply-draft']) $(id).disabled = running;
+  $('context-draft').hidden = !c.draft; $('context-draft-name').textContent = c.draft ? `待导入草稿：${c.draft.name} · ${c.draft.terms}个术语` : '';
+  $('context-terms').replaceChildren(...(c.active?.glossary || []).map(t => { const entry = el('div'); entry.append(el('strong', t.term), el('p', t.meaning), el('p', t.usageNotes, 'hint')); return entry; }));
+}
+async function contextAction(path, data = {}) { try { const out = await api('/context/' + path, data); notice(out.message); await refresh(); } catch (e) { notice(e.message, true); } }
+$('context-file').addEventListener('change', async e => { try { const file = e.target.files[0]; if (!file) return; if (file.size > 300000) throw new Error('配置文件不能超过300 KB'); $('context-json').value = await file.text(); notice(`已读取 ${file.name}，尚未导入。`); } catch (error) { notice(error.message, true); } e.target.value = ''; });
+for (const [id, action] of [['context-builtin', 'builtin'], ['context-undo', 'undo'], ['context-unload', 'unload'], ['context-apply-draft', 'apply-draft']]) $(id).addEventListener('click', () => contextAction(action));
+for (const action of ['validate', 'import']) $('context-' + action).addEventListener('click', () => { try { const config = JSON.parse($('context-json').value); contextAction(action, { config }); } catch (e) { notice('JSON无法读取：' + e.message, true); } });

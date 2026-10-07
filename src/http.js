@@ -42,6 +42,18 @@ export function createHandler(engine) {
           res.writeHead(200, { 'content-type': loaded.ref.mediaType, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' });
           res.end(loaded.data); return;
         }
+        const downloads = {
+          '/api/context/export': () => engine.exportContext(),
+          '/api/context/template': () => engine.contextFormat().template,
+          '/api/context/builtin/export': () => engine.builtinContext(),
+          '/api/context/draft/export': () => engine.draftContext(),
+        };
+        if (Object.hasOwn(downloads, route)) {
+          const config = downloads[route]();
+          res.setHeader('content-disposition', `attachment; filename="${config.id}.json"`);
+          return send(res, 200, config);
+        }
+        if (route === '/api/context') return send(res, 200, engine.context());
         if (route === '/api/status') return send(res, 200, engine.state());
         if (route === '/api/models') return send(res, 200, await engine.model.catalog());
         if (route === '/api/background') return send(res, 200, engine.background());
@@ -60,6 +72,13 @@ export function createHandler(engine) {
         const origin = req.headers.origin;
         if (!origin || new URL(origin).host !== req.headers.host || req.headers['sec-fetch-site'] === 'cross-site') return send(res, 403, { error: '操作必须从巡查面板发起' });
         const data = await body(req);
+        if (route === '/api/context/import') return send(res, 200, await engine.importContext(data));
+        if (route === '/api/context/builtin') return send(res, 200, await engine.useBuiltinContext());
+        if (route === '/api/context/validate') return send(res, 200, engine.validateContext(data));
+        if (route === '/api/context/draft') return send(res, 200, await engine.saveContextDraft(data));
+        if (route === '/api/context/apply-draft') return send(res, 200, await engine.applyContextDraft());
+        if (route === '/api/context/unload') return send(res, 200, await engine.unloadContext());
+        if (route === '/api/context/undo') return send(res, 200, await engine.undoContext());
         if (route === '/api/background/preset') return send(res, 200, await engine.useCommunityBackground());
         if (route === '/api/background/start') return send(res, 200, await engine.startBackground(data));
         if (route === '/api/background/update') return send(res, 200, await engine.updateBackground(data));

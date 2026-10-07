@@ -56,7 +56,8 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
         ...a.evidence.map((quote, i) => h('blockquote', { key: i }, h('small', null, a.evidenceSources?.[i] || '正文'), h('div', null, quote))),
         ...(a.imageEvidence || []).map((e, i) => h('blockquote', { key: 'image-' + i }, `配图${e.index}画面依据（${e.uncertain ? '识别不确定，' : ''}须人工核对）：${e.observation}`)),
         a.uncertainties.length > 0 && h(Hint, null, '判断局限：' + a.uncertainties.join('；')),
-        a.backgroundUsed && h(Hint, null, `已读背景 ${a.backgroundUsed.articlesRead} 篇；本次带入 ${a.backgroundUsed.sourceRefs.join('、')} 原文${a.backgroundUsed.expanded ? '（已补读更多）' : ''}。`),
+        a.contextUsed && h(Hint, null, `专题配置：${a.contextUsed.name}（分析时使用的版本）。`),
+        a.backgroundUsed && h(Hint, null, `已读背景 ${a.backgroundUsed.articlesRead} 篇；本次带入 ${a.backgroundUsed.sourceRefs.join('、')} 材料${a.backgroundUsed.expanded ? '（已补读更多）' : ''}。`),
         a.discussionUsed && h(Hint, null, `结合所属笔记及 ${a.discussionUsed.commentsRead} 条已保存评论分析；${a.discussionUsed.contextScope === 'full-saved-discussion' ? '本次模型收到全部已保存讨论' : `讨论过长，本次提供相关讨论，未带入 ${a.discussionUsed.omittedComments} 条`}。${a.discussionUsed.complete ? '' : '采集有缺口，不能视作整个评论区。'}`),
         !embedded && a.decision === 'uncertain' && hasBackground && !item.backgroundExpanded && h(Button, { disabled: busy || running, onClick: () => act('/analyze/item', { id: item.id, backgroundExpanded: true }) }, '补读更多背景后重试'),
         a.route && h('p', { className: 'patrol-meta' }, `分析模型：${a.route.provider} / ${a.route.model} · ${stamp(a.analyzedAt)}`)),
@@ -125,6 +126,48 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
           ...row.analysis.evidence.map((q, i) => h('blockquote', { key: i }, q)),
           row.analysis.uncertainties.length > 0 && h(Hint, null, row.analysis.uncertainties.join('；'))))));
   }
+  function ContextManager({ context, busy, running, act }) {
+    const [json, setJson] = useState(''), [fileName, setFileName] = useState(''), [error, setError] = useState('');
+    const active = context?.active, draft = context?.draft, disabled = busy || running;
+    async function readFile(e) {
+      const file = e.target.files?.[0]; if (!file) return;
+      try { if (file.size > 300000) throw new Error('配置文件不能超过300 KB'); setJson(await file.text()); setFileName(file.name); setError(''); }
+      catch (err) { setError(err.message); }
+      e.target.value = '';
+    }
+    async function submit(path) {
+      try { const config = JSON.parse(json); setError(''); await act(path, { config }); }
+      catch (err) { setError('JSON无法读取：' + err.message); }
+    }
+    const link = (path, text) => h('a', { href: BASE + path, download: true }, text);
+    return h(Box, { title: '专题配置：背景、黑话与术语' },
+      h('p', null, active ? `当前：${active.name} · ${active.glossary.length}个术语${active.origin === 'legacy' ? '（沿用升级前的DS语境）' : ''}` : '当前没有载入专题配置。'),
+      active?.description && h(Hint, null, active.description),
+      h(Hint, null, '导入会替换当前背景与术语，可撤销；采集记录、判断规则和旧结论保留。不调用模型，也不会自动重新分析。文件只包含专题资料，不包含账号密钥或采集预算。'),
+      h('div', { className: 'patrol-actions' },
+        h(Button, { disabled, primary: !active, onClick: () => act('/context/builtin') }, '导入内置DS拟人争议配置'),
+        link('/context/builtin/export', '下载DS配置'), link('/context/export', '导出当前配置'), link('/context/template', '下载空白模板')),
+      h(Field, { label: '选择专题JSON文件' }, h('input', { type: 'file', accept: '.json,application/json', disabled, onChange: readFile })),
+      fileName && h(Hint, null, `已读取 ${fileName}，尚未导入。`),
+      h('details', { open: !!json }, h('summary', null, '查看或粘贴配置JSON'),
+        h(Field, { label: '配置JSON' }, h('textarea', { value: json, rows: 8, maxLength: 300000, disabled, onChange: e => { setJson(e.target.value); setFileName(''); setError(''); }, placeholder: '可粘贴配置制作助手提供的JSON' }))),
+      error && h('p', { className: 'patrol-error', role: 'alert' }, error),
+      h('div', { className: 'patrol-actions' },
+        h(Button, { disabled: disabled || !json.trim(), onClick: () => submit('/context/validate') }, '仅校验格式'),
+        h(Button, { primary: true, disabled: disabled || !json.trim(), onClick: () => submit('/context/import') }, '校验并导入配置'),
+        context?.canUndo && h(Button, { disabled, onClick: () => act('/context/undo') }, '撤销上次专题切换'),
+        (active || context?.hasBackground) && h(Button, { disabled, onClick: () => act('/context/unload') }, '卸下专题及背景')),
+      h(Hint, null, '制作新专题：回到对话，在模式选择中选“鲸声守望配置制作助手”，提供背景材料和术语示例。助手校验并保存草稿后，回到这里下载、查看、导入。助手整理会使用所选模型；保存和导入文件本身不产生调用。'),
+      draft && h('div', { className: 'patrol-pending-summary' }, h('p', null, `待导入草稿：${draft.name} · ${draft.sources}篇来源 · ${draft.terms}个术语`),
+        h('div', { className: 'patrol-actions' }, link('/context/draft/export', '下载配置草稿'), h(Button, { disabled, onClick: () => act('/context/apply-draft') }, '导入这份草稿'))),
+      active && h('details', null, h('summary', null, `查看术语解释（${active.glossary.length}个）`),
+        ...active.glossary.map(t => h('div', { key: t.term, className: 'patrol-background-entry' }, h('strong', null, t.term),
+          h(Hint, null, `${t.aliases.length ? '别名：' + t.aliases.join('、') + ' · ' : ''}${t.status === 'uncertain' ? '尚未确认' : t.status === 'confirmed' ? '配置作者已核对' : '来源说法'}`),
+          h('p', null, t.meaning), t.usageNotes && h(Hint, null, t.usageNotes), t.sourceRefs.length > 0 && h(Hint, null, '配置来源：' + t.sourceRefs.join('、')),
+          ...t.sources.map((url, i) => h('p', { key: url }, h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, `词义来源${i + 1} ↗`))))),
+        h(Hint, null, '词义只帮助理解原文；同一词可有多种用法，不因出现术语就自动判可疑。')),
+      active?.interpretationNotes.length > 0 && h('details', null, h('summary', null, '查看语境说明（初判与核对共用）'), ...active.interpretationNotes.map((text, i) => h('p', { key: i }, text))));
+  }
   function Background({ background, busy, running, act, defaultKeywords }) {
     const [source, setSource] = useState('existing'), [count, setCount] = useState(10), [links, setLinks] = useState(''), [terms, setTerms] = useState(defaultKeywords || '');
     const [selected, setSelected] = useState(null), [refreshSources, setRefreshSources] = useState(false), [memo, setMemo] = useState('');
@@ -137,35 +180,31 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
       h('summary', null, `[${r.ref}] ${r.title}`),
       h('p', null, r.summary),
       r.url && h('a', { href: r.url, target: '_blank', rel: 'noopener noreferrer' }, '手动打开背景原帖 ↗'),
-      h(Hint, null, r.origin === 'curated-review' ? `采样评论 ${r.commentsRead} 条 · 人工检视配图 ${r.reviewedImages}/${r.sourceImageCount} 张 · ${r.coverage?.localOriginalAvailable ? '已关联本机原文' : '摘要与来源链接'}${r.coverage?.imageTextUnavailable ? '；模型配图转录未完整提供' : ''}。` : `阅读材料 ${r.originalChars || 0} 字 · 可见评论 ${r.commentsRead} 条 · 配图${r.coverage?.imagesUnread ? '未完整读取' : '无缺图标记'}。`),
+      h(Hint, null, r.origin === 'context-file' ? '配置文件提供的摘要与来源；未自动重新读取原帖。' : r.origin === 'curated-review' ? `采样评论 ${r.commentsRead} 条 · 人工检视配图 ${r.reviewedImages}/${r.sourceImageCount} 张 · ${r.coverage?.localOriginalAvailable ? '已关联本机原文' : '摘要与来源链接'}${r.coverage?.imageTextUnavailable ? '；模型配图转录未完整提供' : ''}。` : `阅读材料 ${r.originalChars || 0} 字 · 可见评论 ${r.commentsRead} 条 · 配图${r.coverage?.imagesUnread ? '未完整读取' : '无缺图标记'}。`),
       r.uncertainties.length > 0 && h(Hint, null, r.uncertainties.join('；')),
       r.observations.length > 0 && h('details', null, h('summary', null, '知识点与原文依据'), ...r.observations.map((o, i) => h('div', { key: i }, h('p', null, `${o.subject}：${o.explanation}`), h('blockquote', null, `${o.sourcePart} · ${o.status === 'source_claim' ? '来源说法' : o.status === 'uncertain' ? '不确定' : '可见内容'}：${o.quote}`)))));
     return h(React.Fragment, null,
       h(Box, { title: active ? `当前背景：${background.enabled ? '已启用' : '已关闭'}` : '当前背景：尚未设置' },
         active ? h(React.Fragment, null,
-          h('p', null, active.origin === 'curated-review' ? `正在使用扩大阅读整理，包含 ${active.readings.length} 篇笔记的来源索引。已准备好，可以直接回“巡查结果”分析内容。` : `正在使用模型整理的背景笔记，来源 ${active.readings.length} 篇。可以直接回“巡查结果”分析内容。`),
+          h('p', null, active.origin === 'context-file' ? `正在使用导入配置的背景，包含 ${active.readings.length} 篇来源。导入没有重新读取原帖或调用模型。` : active.origin === 'curated-review' ? `正在使用扩大阅读整理，包含 ${active.readings.length} 篇笔记的来源索引。已准备好，可以直接回“巡查结果”分析内容。` : `正在使用模型整理的背景笔记，来源 ${active.readings.length} 篇。可以直接回“巡查结果”分析内容。`),
           active.origin === 'curated-review' && h(Hint, null, '这份整理来自此前的36篇笔记、533条采样评论、91张配图记录，并注明阅读缺口；启用它不会重新调用模型阅读。'),
           h('label', null, h('input', { type: 'checkbox', checked: background.enabled, disabled: busy || running, onChange: e => act('/background/update', { enabled: e.target.checked }) }), ' 分析时使用当前背景'),
-          h(Hint, null, `更新于 ${stamp(active.editedAt || active.completedAt)}。修改背景后，旧分析需要重新运行；不会自动产生调用。`),
+          h(Hint, null, `更新于 ${stamp(active.editedAt || active.completedAt)}。修改仅用于后续分析，旧结论保留；需要重算时点击“重新分析整篇”。`),
           h('details', null, h('summary', null, '查看和修改背景笔记'),
             h(Hint, null, '这段笔记会随每条内容一起交给模型，解释人物、黑话和事件；具体行为标准在“规则与设置”中。'),
             h(Field, { label: '背景笔记（可以纠正）' }, h('textarea', { value: memo, rows: 15, maxLength: 24000, onChange: e => setMemo(e.target.value) })),
             h(Button, { disabled: busy || running || memo.trim().length < 20 || memo === active.memo, onClick: () => act('/background/update', { memo }) }, '保存背景笔记')),
-          h('details', null, h('summary', null, `查看来源（${active.readings.length}篇）`), ...active.readings.map(sourceEntry))) : h('p', null, '还没有供模型参考的背景。可以在下面启用已整理的36篇背景，也可以自行重新阅读。')),
+          h('details', null, h('summary', null, `查看来源（${active.readings.length}篇）`), ...active.readings.map(sourceEntry))) : h('p', null, '还没有供模型参考的背景。可以导入上方的专题配置，也可以自行整理背景。')),
       h(Box, { title: '它怎样参与判断' },
         h('ol', null,
           h('li', null, '规则：定义人身攻击、地图炮、普通创作区引战等七类不合理行为。'),
           h('li', null, '背景：解释人物、黑话和事件，帮助模型理解原文。'),
           h('li', null, '分析：把目标原文和上下文，与规则、当前背景笔记和来源摘要一起交给模型，通常再补充3篇相关来源的文字。')),
-        h(Hint, null, '不会每次重读全部36篇，也不会自动把新巡查记录加入背景。来源里的观点仍是来源观点，不能当作已证实事实或当前作者自己的话。')),
+        h(Hint, null, '不会每次重读全部来源，也不会自动把新巡查记录加入背景。来源里的观点仍是来源观点，不能当作已证实事实或当前作者自己的话。')),
       h(Box, { title: '更换背景（可选）' },
         h('p', null, '当前背景可正常使用时，无需操作这里。'),
-        h('details', null, h('summary', null, '使用已整理的36篇背景'),
-          h(Hint, null, '直接启用此前的扩大阅读整理，替换当前背景笔记；不调用模型阅读。'),
-          h(Button, { disabled: busy || running || !!active && active.presetRevision === background.preset?.revision,
-            onClick: () => act('/background/preset', {}) }, active && active.presetRevision === background.preset?.revision ? '当前已使用这份整理' : '切换到36篇整理背景')),
         h('details', null, h('summary', null, '让模型重新阅读并替换背景'),
-          h('p', null, '选择材料后，模型会先读文章与配图，再整理一份新背景。成功后替换当前背景，旧背景保留备份；不是把材料自动追加到当前36篇中。'),
+          h('p', null, '选择材料后，模型会先读文章与配图，再整理一份新背景。成功后替换当前背景，旧背景保留备份；不会改变上方已载入的术语解释。'),
           h('div', { className: 'patrol-grid-two' }, h(Field, { label: '文章来源' }, h('select', { value: source, onChange: e => setSource(e.target.value) }, h('option', { value: 'existing' }, '选择已采集文章'), h('option', { value: 'urls' }, '指定文章链接'), h('option', { value: 'search' }, '按关键词采集文章'))),
             h(Field, { label: '本次最多阅读篇数' }, h('input', { type: 'number', min: 1, max: 20, value: count, onChange: e => setCount(e.target.value) }))),
           source === 'existing' && h('div', null,
@@ -235,6 +274,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
         if (path === '/data-key') setDataKey('');
         if (path === '/settings') { setDraft(result.settings); setSearchDraft(searchValues(result.settings, result.searchOptions)); }
         await refresh(controller.signal);
+        return result;
       } catch (error) { if (!controller.signal.aborted) setNotice({ error: true, text: error.message }); }
       finally { if (!controller.signal.aborted) setBusy(false); }
     }
@@ -259,10 +299,10 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('div', { className: 'patrol-native', 'data-patrol-native': true },
       h('div', { className: 'patrol-workbench' },
         h('header', { className: 'patrol-header' }, h('div', null,
-          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.9')),
+          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.8.0')),
           h(Hint, null, '辅助发现不合理讨论，共同维护讨论与创作环境。')), 
           h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话'))),
-        h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查结果'], ['background', '背景阅读'], ['import', '导入文字'], ['settings', '规则与设置'], ['evaluation', '示例评估']].map(([id, label]) =>
+        h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查结果'], ['background', '背景与术语'], ['import', '导入文字'], ['settings', '规则与设置'], ['evaluation', '示例评估']].map(([id, label]) =>
           h(Button, { key: id, 'aria-pressed': tab === id, onClick: () => setTab(id) }, label))),
         notice && h('div', { className: 'patrol-notice' + (notice.error ? ' patrol-error' : ''), role: notice.error ? 'alert' : 'status' }, notice.text),
         !state ? h(Box, { title: '正在连接巡查服务…' }, h(Hint, null, '如果连接失败，可刷新 DSH 后重试。')) : h(React.Fragment, null,
@@ -274,7 +314,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
             h('div', { className: 'patrol-actions' }, running && h(Button, { disabled: busy, onClick: () => act('/stop') }, '停止任务'),
               !running && canContinue && h(Button, { primary: true, disabled: busy, onClick: () => act('/resume', { jobId: job.id }) }, continueLabel))),
           tab === 'results' && h(React.Fragment, null,
-            h(Hint, null, state.background?.activeId && state.background.enabled ? `已启用背景笔记（来源 ${state.background.articlesRead} 篇），可直接分析；无需再运行背景阅读。` : '尚未启用背景。可先到“背景阅读”了解事件和用语，再分析内容。'),
+            h(Hint, null, state.background?.activeId && state.background.enabled ? `已启用背景笔记（来源 ${state.background.articlesRead} 篇），可直接分析；无需再运行背景阅读。` : '尚未启用背景。可先到“背景与术语”导入配置或整理背景，再分析内容。'),
             h('div', { className: 'patrol-stats' }, ...[['未阅讨论', 'unread'], ['可疑', 'suspicious'], ['其它', 'other'], ['待分析', 'pending']].map(([label, key]) =>
               h('div', { key }, h('span', null, label), h('strong', null, `${state.counts[key]}篇`), h('span', { className: 'patrol-stat-entries' }, `${state.counts.entries?.[key] ?? 0}条`)))),
             h(Hint, null, `当前保存 ${state.counts.discussions} 篇笔记讨论${state.counts.standalone ? `，另有 ${state.counts.standalone} 条单独导入` : ''}；原始记录共 ${state.counts.records} 条，已归并显示。`),
@@ -370,14 +410,14 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Field, { label: '判断规则' }, h('textarea', { value: draft.rules, onChange: updateDraft('rules'), rows: 16, required: true, minLength: 20, maxLength: 12000 }))),
             state.policy?.contextGuide && h('details', null, h('summary', null, '查看黑话与语境判断补充（初判、复核通用）'), h('p', { style: { whiteSpace: 'pre-wrap' } }, state.policy.contextGuide)),
             h(Button, { type: 'submit', primary: true, disabled: busy || running }, '保存设置')),
-          tab === 'background' && h(Background, { background, busy, running, act, defaultKeywords: keywords }),
+          tab === 'background' && h(React.Fragment, null, h(ContextManager, { context: state.context, busy, running, act }), h(Background, { background, busy, running, act, defaultKeywords: keywords })),
           tab === 'evaluation' && h(Evaluation, { report, busy, running, maxAnalysis: state.settings.maxAnalysis, act })),
         h('footer', { className: 'patrol-footer' }, '实验性内容巡查结果 · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
   }
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.7.9';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.8.0';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,

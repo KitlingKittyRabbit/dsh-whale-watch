@@ -9,6 +9,8 @@ import { DshModel } from '../src/model.js';
 import { backgroundInput } from '../src/background.js';
 import { createCommunityBackground } from '../src/community-background.js';
 import { GROUP_RESPECT_GUIDE, CONTEXTUAL_BEHAVIOR_GUIDE } from '../src/rules.js';
+import { BUILTIN_DS_CONTEXT, loadedContext, topicInput } from '../src/topic-context.js';
+const dsSettings = () => ({ ...defaultSettings(), topicContext: topicInput(loadedContext(BUILTIN_DS_CONTEXT)) });
 import { parseAnalysis } from '../src/schema.js';
 
 for (const verdict of ['supported', 'unsupported']) {
@@ -58,9 +60,9 @@ for (const [text, category, target, context] of [
         yield { type: 'text-delta', index: 0, text: JSON.stringify(value) }; yield { type: 'finish', reason: { kind: 'stop' } };
       })(),
     } });
-    const result = await model.analyze(item, defaultSettings());
+    const result = await model.analyze(item, dsSettings());
     assert.equal(result.decision, 'review'); assert.equal(result.policyVersion, 'community-environment-v8');
-    assert.equal(calls.length, 2); for (const call of calls) assert.ok(call.system.includes(CONTEXTUAL_BEHAVIOR_GUIDE));
+    assert.equal(calls.length, 2); for (const call of calls) { assert.ok(!call.system.includes(CONTEXTUAL_BEHAVIOR_GUIDE)); assert.equal(JSON.parse(call.messages[0].content[0].text).background.topic.interpretationNotes.join('\n'), CONTEXTUAL_BEHAVIOR_GUIDE); }
     const inputs = calls.map(call => JSON.parse(call.messages[0].content[0].text));
     assert.equal(inputs[0].target.text, text); assert.deepEqual(inputs[1].background, inputs[0].background);
   });
@@ -81,12 +83,12 @@ test('复核可以保留创作区引战，同时撤回从虚构拟人臆推其�
   const speculative = { category: '群体不尊重或地图炮', quote: text, target: '男性拟人爱好者', behavior: '臆推爱好者都性压抑' };
   let calls = 0;
   const model = new DshModel({ agentDefaultModel: { currentSelection: () => ({}) }, llm: { stream: options => (async function* () {
-    calls++; assert.ok(options.system.includes(CONTEXTUAL_BEHAVIOR_GUIDE));
+    calls++; assert.ok(!options.system.includes(CONTEXTUAL_BEHAVIOR_GUIDE)); assert.equal(JSON.parse(options.messages[0].content[0].text).background.topic.id, 'ds-personification');
     const output = calls === 1 ? { targetQuote: text, interpretation: '在普通绘画下攻击另一拟人', decision: 'review', categories: [creative.category, speculative.category], reason: '初判可能过度归因', evidence: [text], findings: [creative, speculative], uncertainties: [], confidence: .8 }
       : { verdict: 'supported', reason: '成立的是创作区引战，没有现实爱好者群体被指称的依据', findings: [creative] };
     yield { type: 'text-delta', index: 0, text: JSON.stringify(output) }; yield { type: 'finish', reason: { kind: 'stop' } };
   })() } });
-  const result = await model.analyze({ kind: 'comment', text, context: '普通鲸鱼娘绘画展示，没有阵营讨论', coverage: {} }, defaultSettings());
+  const result = await model.analyze({ kind: 'comment', text, context: '普通鲸鱼娘绘画展示，没有阵营讨论', coverage: {} }, dsSettings());
   assert.deepEqual(result.categories, [creative.category]); assert.deepEqual(result.findings, [creative]); assert.equal(calls, 2);
 });
 

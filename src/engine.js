@@ -7,9 +7,9 @@ import { analysisMaterial, imageContext } from './images.js';
 import { hash } from './store.js';
 import { backgroundStartSchema, backgroundUpdateSchema, readingMaterial, backgroundHash, activeBackground, publicProfile, backgroundReadingKey, parseReading } from './background.js';
 
-import { communityBackgroundInfo, createCommunityBackground } from './community-background.js';
+import { communityBackgroundInfo } from './community-background.js';
 import { discussionHash, discussionBatches } from './discussion.js';
-import { CONTEXTUAL_BEHAVIOR_GUIDE } from './rules.js';
+import { BUILTIN_DS_CONTEXT, CONTEXT_TEMPLATE, CONTEXT_JSON_SCHEMA, parseContext, loadedContext, topicInput, createConfigBackground, exportContext, contextView } from './topic-context.js';
 import { discussionUnits, findUnit } from './units.js';
 import { SEARCH_OPTIONS, searchSummary } from './search-options.js';
 
@@ -18,7 +18,7 @@ export class PatrolEngine {
   async init() { await this.store.init(); await this.apiCollector?.init(); return this; }
   itemOptions(item, options) { const unit = findUnit(item, this.store.data.items); const records = unit && !unit.standalone ? unit.records : null; return records ? { ...options, discussionHash: discussionHash(records) } : options; }
   isStale(item) { return !!item.analysis && !!this.model.cacheKey && item.analysisKey !== this.model.cacheKey(item, this.itemOptions(item, this.analysisSettings(this.store.data.settings))); }
-  analysisSettings(settings) { return { ...settings, backgroundContext: activeBackground(this.store.data) }; }
+  analysisSettings(settings) { return { ...settings, backgroundContext: activeBackground(this.store.data), topicContext: topicInput(this.store.data.context?.active) }; }
   unitView(unit) {
     const settings = this.analysisSettings(this.store.data.settings);
     if (!unit.standalone) settings.discussionHash = discussionHash(unit.records);
@@ -47,7 +47,7 @@ export class PatrolEngine {
     const data = this.store.data, units = this.unitViews(), unread = units.filter(i => !i.readAt);
     const entries = unread.flatMap(i => i.entries.filter(e => !e.readAt));
     const suspicious = unread.filter(i => i.inspectionResult === 'suspicious').length;
-    return { settings: data.settings, searchOptions: SEARCH_OPTIONS, policy: { version: 'community-environment-v8', contextGuide: CONTEXTUAL_BEHAVIOR_GUIDE }, dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
+    return { settings: data.settings, searchOptions: SEARCH_OPTIONS, policy: { version: 'community-environment-v8', contextGuide: this.store.data.context?.active?.config.interpretationNotes.join('\n') || '' }, context: contextView(data), dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: units.length, unread: unread.length, read: units.length - unread.length, review: suspicious, suspicious,
       other: unread.filter(i => i.entries.some(e => !e.readAt && e.inspectionResult === 'other')).length,
       uncertain: unread.filter(i => i.entries.some(e => e.inspectionResult === 'other' && e.analysis?.decision === 'uncertain')).length,
@@ -343,16 +343,51 @@ export class PatrolEngine {
       history: b.history.map(p => ({ id: p.id, createdAt: p.createdAt, articlesRead: p.readings.length })),
       articles: this.store.data.items.filter(i => i.kind === 'note').map(i => ({ id: i.id, title: i.title, url: i.url, imageCount: i.coverage?.imageCount || 0, savedImages: i.images?.filter(p => p.attachment).length || 0, capturedAt: i.capturedAt })) };
   }
-  async useCommunityBackground() {
-    if (this.active) throw new Error('任务进行中，请先停止或等待完成');
-    const previous = structuredClone(this.store.data.background);
-    const b = this.store.data.background;
-    const profile = createCommunityBackground(this.store.data.items, b.active);
-    if (b.active) b.history = [...b.history, structuredClone(b.active)].slice(-3);
-    b.active = profile; b.draft = null; b.enabled = true;
-    try { await this.store.save(); } catch (error) { this.store.data.background = previous; throw error; }
-    return { message: '已使用36篇材料的扩大阅读整理；后续分析会携带该背景，旧背景已保留。', ...this.background() };
+  context() { return contextView(this.store.data); }
+  contextFormat() { return { template: CONTEXT_TEMPLATE, jsonSchema: CONTEXT_JSON_SCHEMA, format: 'whale-watch-context', schemaVersion: 1, maxBytes: 300000, limits: { sources: 100, glossary: 100, memoChars: 24000 }, instructions: '背景sources的ref为B1、B2等，包含title、summary、可选url/observations/uncertainties/excerpts；glossary每项含term、meaning，可选aliases、usageNotes、status(source_claim/confirmed/uncertain)、sourceRefs、sources网址；interpretationNotes为字符串数组。只包含背景和术语；未知字段拒绝导入。confirmed仅是配置作者标注。' }; }
+  exportContext() { return exportContext(this.store.data); }
+  builtinContext() { return structuredClone(BUILTIN_DS_CONTEXT); }
+  draftContext() { if (!this.store.data.context.draft) throw new Error('还没有配置草稿'); return structuredClone(this.store.data.context.draft.config); }
+  validateContext(input) {
+    const config = parseContext(input.configJson ?? input.config);
+    return { config, name: config.name, sources: config.background.sources.length, terms: config.glossary.length, message: `格式校验通过：${config.name}，${config.background.sources.length}篇来源，${config.glossary.length}个术语。格式校验不验证来源事实。` };
   }
+  async saveContextDraft(input) {
+    const { config } = this.validateContext(input), c = this.store.data.context, previous = c.draft;
+    c.draft = loadedContext(config, 'agent-draft');
+    try { await this.store.save(); } catch (error) { c.draft = previous; throw error; }
+    return { message: `已保存“${config.name}”配置草稿，尚未启用；可在背景与术语页下载、查看并导入。`, downloadPath: '/plugins/dafeiyu-patrol/api/context/draft/export', ...this.context() };
+  }
+  async importContext(input, origin = 'file') {
+    if (this.active) throw new Error('任务进行中，请先停止或等待完成再切换专题');
+    const { config } = this.validateContext(input), data = this.store.data;
+    const previous = { context: data.context, background: data.background };
+    const b = data.background;
+    data.context = { active: loadedContext(config, origin), draft: null, previous: { active: data.context.active, draft: data.context.draft, background: structuredClone(b) } };
+    data.background = { enabled: true, active: createConfigBackground(config), draft: null, history: [...b.history, ...(b.active ? [structuredClone(b.active)] : [])].slice(-3) };
+    try { await this.store.save(); } catch (error) { Object.assign(data, previous); throw error; }
+    return { message: `已载入“${config.name}”：背景和术语一同启用；记录、规则和旧分析保留，没有启动采集或模型调用。可撤销本次切换。`, ...this.context() };
+  }
+  async useBuiltinContext() { return this.importContext({ config: BUILTIN_DS_CONTEXT }, 'builtin'); }
+  async applyContextDraft() { return this.importContext({ config: this.draftContext() }, 'agent-draft'); }
+  async unloadContext() {
+    if (this.active) throw new Error('任务进行中，请先停止或等待完成再卸下专题');
+    const data = this.store.data, previous = { context: data.context, background: data.background };
+    data.context = { active: null, draft: data.context.draft, previous: { active: data.context.active, draft: data.context.draft, background: structuredClone(data.background) } };
+    data.background = { ...data.background, active: null, draft: null };
+    try { await this.store.save(); } catch (error) { Object.assign(data, previous); throw error; }
+    return { message: '已卸下专题及背景；原文、规则和已保存结果保留。可撤销本次操作。', ...this.context() };
+  }
+  async undoContext() {
+    if (this.active) throw new Error('任务进行中，请先停止或等待完成再撤销');
+    const data = this.store.data, undo = data.context.previous;
+    if (!undo) throw new Error('没有可撤销的专题切换');
+    const previous = { context: data.context, background: data.background };
+    data.context = { active: undo.active, draft: undo.draft || null, previous: null }; data.background = undo.background;
+    try { await this.store.save(); } catch (error) { Object.assign(data, previous); throw error; }
+    return { message: '已恢复切换前的专题和背景；没有重新分析内容。', ...this.context() };
+  }
+  async useCommunityBackground() { return this.useBuiltinContext(); }
   async updateBackground(input) {
     if (this.active) throw new Error('任务进行中，请先停止或等待完成');
     const change = backgroundUpdateSchema.parse(input); const b = this.store.data.background;

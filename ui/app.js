@@ -42,8 +42,9 @@ async function refresh() {
     $('count-' + key).textContent = `${state.counts[category]}篇`;
     $('count-' + key + '-entries').textContent = `${state.counts.entries?.[category] ?? 0}条`;
   }
-  $('analysis-failures').hidden = !state.counts.analysisFailed;
-  $('analysis-failures').textContent = `有 ${state.counts.analysisFailedNotes} 篇中的 ${state.counts.analysisFailed} 条内容分析失败。分析未阅会逐条重试失败项，保留已完成结果；仍会调用模型，费用另计。`;
+  const pending = state.counts.entries?.pending || 0, failed = state.counts.analysisFailed || 0;
+  $('analysis-failures').hidden = !pending;
+  $('analysis-failures').textContent = `待分析 ${pending} 条 ＝ 仍失败 ${failed} 条 ＋ 尚未完成或需要更新 ${Math.max(0, pending - failed)} 条。补读配图或更新材料、规则、背景后，旧结果需要重新核对。${state.activeJob ? '任务正在继续处理，无需重复点击。' : '分析未阅会重试失败项并更新旧结果；有效结果复用，模型费用另计。'}上方失败数只统计本轮尝试。`;
   const s = state.settings;
   if (catalog) {
     const route = s.provider ? s : catalog.current;
@@ -68,7 +69,7 @@ async function refresh() {
     $('job-waiting').textContent = `已运行 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒 · 等待本批结果时，完成数会暂时不变。`;
     $('job-status').textContent = job.status === 'running' && job.mode !== 'scan' ? '正在分析' : statuses[job.status] || job.status;
     $('job-message').textContent = job.message;
-    $('job-counts').textContent = `${job.notesAttempted === undefined ? '' : `排除已查 ${job.notesExcluded || 0} 篇 · 检查 ${job.notesAttempted} 篇 · 读到 ${job.notesRead} 篇 · 未读取 ${job.skippedNotes?.length || 0} 篇 · `}采集 ${job.collected} · 分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`;
+    $('job-counts').textContent = `${job.notesAttempted === undefined ? '' : `排除已查 ${job.notesExcluded || 0} 篇 · 检查 ${job.notesAttempted} 篇 · 读到 ${job.notesRead} 篇 · 未读取 ${job.skippedNotes?.length || 0} 篇 · `}本轮：采集 ${job.collected} · 新分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`;
     $('job-log').replaceChildren(...job.messages.slice(-30).map(log => el('li', new Date(log.at).toLocaleTimeString('zh-CN') + ' · ' + log.message)));
   }
   if (!initialized && catalog) { settingsForm(); initialized = true; }
@@ -124,6 +125,9 @@ function discussionCard(item) {
   const node = el('article', undefined, 'card');
   node.append(el('h3', item.title), el('span', item.inspectionResult === 'suspicious' ? '可疑' : item.inspectionResult === 'other' ? '其它' : '待分析', 'badge'));
   node.append(el('p', `一篇笔记＋${item.discussionSummary.commentsRead}条已保存评论 · 可疑${item.discussionSummary.suspicious}条 · 其它${item.discussionSummary.other}条 · 待分析${item.discussionSummary.pending}条`));
+  const pending = item.entries.filter(i => !i.readAt && !i.inspectionResult);
+  const failed = pending.filter(i => i.analysisError).length, stale = pending.filter(i => !i.analysisError && i.analysisStale).length;
+  if (pending.length) node.append(el('p', `待分析组成：${failed}条失败 · ${stale}条旧结果需更新 · ${pending.length - failed - stale}条尚未分析。`, 'hint'));
   for (const text of item.discussionSummary.limitations) node.append(el('p', text, 'uncertainties'));
   const detail = el('details'); detail.append(el('summary', '查看正文、配图提示及评论判断'));
   for (const entry of item.entries) detail.append(card(entry, true));

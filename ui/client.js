@@ -73,12 +73,16 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const comments = item.entries.filter(i => i.kind === 'comment');
     const suspicious = comments.filter(i => i.inspectionResult === 'suspicious');
     const others = comments.filter(i => i.inspectionResult !== 'suspicious');
+    const pending = item.entries.filter(i => !i.readAt && !i.inspectionResult);
+    const failed = pending.filter(i => i.analysisError).length;
+    const stale = pending.filter(i => !i.analysisError && i.analysisStale).length;
     const props = { busy, running, act, hasBackground, embedded: true };
     return h('article', { className: 'patrol-record', 'aria-label': '整篇讨论：' + item.title },
       h('div', { className: 'patrol-card-head' }, h('h3', null, item.title || '无标题笔记'),
         h('span', { className: 'patrol-badge ' + (item.inspectionResult === 'suspicious' ? 'review' : item.inspectionResult ? 'normal' : '') },
           item.inspectionResult === 'suspicious' ? '可疑' : item.inspectionResult === 'other' ? '其它' : '待分析')),
       h(Hint, null, `一篇笔记＋${summary.commentsRead}条已保存评论 · 可疑${summary.suspicious}条 · 其它${summary.other}条 · 待分析${summary.pending}条`),
+      pending.length > 0 && h(Hint, null, `待分析组成：${failed}条失败 · ${stale}条旧结果需更新 · ${pending.length - failed - stale}条尚未分析。`),
       ...summary.limitations.map((text, i) => h(Hint, { key: i }, text)),
       note ? h('details', null, h('summary', null, '查看笔记正文、配图及作者判断'), h(RecordCard, { ...props, item: note }))
         : h(Hint, null, '所属笔记正文未保存，仅保留已有评论。'),
@@ -235,6 +239,8 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const job = state?.jobs[0];
     const elapsed = Math.max(0, Math.floor((now - Date.parse(job?.startedAt || new Date(now).toISOString())) / 1000));
     const runningLabel = job?.mode === 'background' ? '正在阅读背景' : job?.mode === 'evaluate' ? '正在评估示例' : job?.mode === 'scan' ? job.options?.analyze ? '正在采集与分析' : '正在采集' : '正在分析';
+    const pendingEntries = state?.counts.entries?.pending || 0;
+    const failedEntries = state?.counts.analysisFailed || 0;
     const canContinue = !!job && (['paused', 'cancelled', 'interrupted'].includes(job.status) || job.status === 'partial' && job.analysisDeferred) && job.mode !== 'evaluate';
     const continueLabel = job?.mode === 'analyze' || job?.mode === 'scan' && job.status !== 'paused' && job.options?.analyze && state?.counts.pending > 0 ? '继续分析剩余篇目' : job?.mode === 'scan' ? '继续采集' : '继续任务';
     const route = state?.settings.provider ? state.settings : catalog?.current;
@@ -243,7 +249,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('div', { className: 'patrol-native', 'data-patrol-native': true },
       h('div', { className: 'patrol-workbench' },
         h('header', { className: 'patrol-header' }, h('div', null,
-          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.6')),
+          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.7.7')),
           h(Hint, null, '辅助发现不合理讨论，共同维护讨论与创作环境。')), 
           h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话'))),
         h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查结果'], ['background', '背景阅读'], ['import', '导入文字'], ['settings', '规则与设置'], ['evaluation', '示例评估']].map(([id, label]) =>
@@ -253,7 +259,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
           job && (running || canContinue) && h(Box, { className: running ? 'patrol-running-task' : '',
             title: running ? h('span', { className: 'patrol-running-heading' }, h('span', { className: 'patrol-spinner', 'aria-hidden': true }), runningLabel, h('span', { className: 'patrol-running-badge' }, '运行中')) : statuses[job.status] },
             running && h('p', { className: 'patrol-running-explainer' }, `已运行 ${Math.floor(elapsed / 60)} 分 ${elapsed % 60} 秒 · 等待本批结果时，完成数会暂时不变。`),
-            h('p', { role: 'status' }, job.message), h(Hint, null, `采集 ${job.collected} · 分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`),
+            h('p', { role: 'status' }, job.message), h(Hint, null, `本轮：采集 ${job.collected} · 新分析 ${job.analyzed} · 复用 ${job.cached} · 失败 ${job.failed}`),
             job.apiRequests > 0 && h(Hint, null, `数据读取 ${job.apiRequests} 次 · 已确认 ¥${(job.apiCostCents / 100).toFixed(2)}${job.apiUnconfirmed ? ` · ${job.apiUnconfirmed} 次费用尚未确认` : ''} · 本轮数据上限 ¥${job.options.apiBudgetYuan}（模型另计）`),
             h('div', { className: 'patrol-actions' }, running && h(Button, { disabled: busy, onClick: () => act('/stop') }, '停止任务'),
               !running && canContinue && h(Button, { primary: true, disabled: busy, onClick: () => act('/resume', { jobId: job.id }) }, continueLabel))),
@@ -264,7 +270,10 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
             h(Hint, null, `当前保存 ${state.counts.discussions} 篇笔记讨论${state.counts.standalone ? `，另有 ${state.counts.standalone} 条单独导入` : ''}；原始记录共 ${state.counts.records} 条，已归并显示。`),
             h(Hint, null, '按“笔记＋已保存评论区”计篇，一篇内有可疑正文或评论就列为可疑。其它仅表示已读部分的结果；有尚未分析内容时保留待分析状态。已保存的旧评论归入原笔记，未采到的部分不会自动补全。'),
             h(Hint, null, '一条指一篇正文或一条评论。各项统计未阅条目及包含该类条目的篇数；同一篇可以含可疑、其它和待分析内容，篇数不互斥。待分析包括失败项。'),
-            !!state.counts.analysisFailed && h('p', { className: 'patrol-error' }, `有 ${state.counts.analysisFailedNotes} 篇中的 ${state.counts.analysisFailed} 条内容分析失败。点击“分析未阅篇目”会逐条重试失败项，保留已完成结果；仍会调用模型，费用另计。`),
+            pendingEntries > 0 && h('div', { className: 'patrol-pending-summary' },
+              h('p', null, h('strong', null, `待分析 ${pendingEntries} 条`), ` ＝ 仍失败 ${failedEntries} 条 ＋ 尚未完成或需要更新 ${Math.max(0, pendingEntries - failedEntries)} 条。`),
+              h(Hint, null, '补读配图、更新正文或评论、修改规则或背景后，旧结果需要重新核对，不能直接当作当前结论。各篇卡片会列出失败、旧结果需更新和尚未分析的数量。'),
+              h(Hint, null, running ? '任务正在继续处理待分析内容，无需重复点击。上方“本轮失败”只统计本次尝试；这里“仍失败”统计所有保存内容。' : '点击“分析未阅篇目”会处理待分析内容，包括重试失败项和更新旧结果；有效结果复用，模型费用另计。')),
             h(Box, { title: '采集记录管理' },
               h(Hint, null, '清空正文、评论、分析、已阅记录、对应巡查任务及已查缓存；模型、规则、背景和密钥保留。可撤销最近一次清空。'),
               h('div', { className: 'patrol-actions' },
@@ -353,7 +362,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.7.6';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.7.7';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,

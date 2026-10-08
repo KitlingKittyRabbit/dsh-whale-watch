@@ -26,7 +26,7 @@ export async function apply(ctx, config = {}) {
     } }), 'patrol web panel');
   });
   const unregister = await ctx.agentPresets.register({
-    id: 'dafeiyu-patrol', name: '鲸声守望', description: '辅助发现不合理讨论，共同维护讨论与创作环境', order: 5,
+    id: 'dafeiyu-patrol', name: '鲸声守望', description: '操作工作台：采集、分析、查看结果、管理专题和设置', order: 5,
     plugins: [
       { name: '@deepseek-ai/dsh-persona', config: { prefix: AGENT_PROMPT, suffix: '', complete: false } },
       { name: fileURLToPath(new URL('./agent.js', import.meta.url)) },
@@ -34,7 +34,7 @@ export async function apply(ctx, config = {}) {
   });
   ctx.effect(() => unregister, 'patrol preset');
   const unregisterBuilder = await ctx.agentPresets.register({
-    id: 'whale-watch-context-builder', name: '鲸声守望配置制作助手', description: '帮助整理背景和术语，草稿在专题页查看并采用', order: 6,
+    id: 'whale-watch-context-builder', name: '鲸声守望配置制作助手', description: '只制作专题草稿：整理背景和术语，不采集、不分析、不直接启用', order: 6,
     plugins: [
       { name: '@deepseek-ai/dsh-persona', config: { prefix: CONTEXT_BUILDER_PROMPT, suffix: '', complete: false } },
       { name: fileURLToPath(new URL('./context-agent.js', import.meta.url)) },

@@ -97,7 +97,10 @@ export class PatrolEngine {
   async settings(input) {
     if (this.active) throw new Error('任务进行中，请先停止任务再修改设置');
     if (input.collectionSource === 'browser') throw new Error(BROWSER_DISABLED_MESSAGE);
-    this.store.data.settings = settingsSchema.parse({ ...input, collectionSource: 'socialdatax' }); await this.store.save(); return this.state();
+    const previous = this.store.data.settings;
+    this.store.data.settings = settingsSchema.parse({ ...input, collectionSource: 'socialdatax' });
+    try { await this.store.save(); } catch (error) { this.store.data.settings = previous; throw error; }
+    return this.state();
   }
   async dataKey(input) {
     if (this.active) throw new Error('任务进行中，请先停止任务再修改数据服务密钥');
@@ -346,6 +349,22 @@ export class PatrolEngine {
   context() { return contextView(this.store.data); }
   contextFormat() { return { template: CONTEXT_TEMPLATE, jsonSchema: CONTEXT_JSON_SCHEMA, format: 'whale-watch-context', schemaVersion: 1, maxBytes: 300000, limits: { sources: 100, glossary: 100, memoChars: 24000 }, instructions: '背景sources的ref为B1、B2等，包含title、summary、可选url/observations/uncertainties/excerpts；glossary每项含term、meaning，可选aliases、usageNotes、status(source_claim/confirmed/uncertain)、sourceRefs、sources网址；interpretationNotes为字符串数组。只包含背景和术语；未知字段拒绝导入。confirmed仅是配置作者标注。' }; }
   exportContext() { return exportContext(this.store.data); }
+  exportRecords() { return { exportedAt: new Date().toISOString(), rules: this.store.data.settings.rules, background: this.store.data.background, items: this.store.data.items }; }
+  async readSavedImage(id, index) {
+    const item = this.store.data.items.find(i => i.id === id);
+    const image = item?.images?.find(i => i.index === index);
+    if (!image?.attachment || !this.model.ctx?.attachments) throw new Error('配图未保存');
+    return this.model.ctx.attachments.readImage(image.attachment);
+  }
+  async patchSettings(input) {
+    const unknown = Object.keys(input).filter(key => !Object.hasOwn(settingsSchema.shape, key));
+    if (unknown.length) throw new Error(`未知设置字段：${unknown.join('、')}`);
+    for (const [provider, model] of [['provider', 'model'], ['visionProvider', 'visionModel']]) {
+      if (Object.hasOwn(input, provider) !== Object.hasOwn(input, model)) throw new Error(`${provider} 与 ${model} 必须一起提供；都留空表示跟随默认模型`);
+      if (Object.hasOwn(input, provider) && (!!input[provider] !== !!input[model])) throw new Error(`${provider} 与 ${model} 应一起填写或一起留空`);
+    }
+    return this.settings({ ...this.store.data.settings, ...input });
+  }
   builtinContext() { return structuredClone(BUILTIN_DS_CONTEXT); }
   draftContext() { if (!this.store.data.context.draft) throw new Error('还没有配置草稿'); return structuredClone(this.store.data.context.draft.config); }
   validateContext(input) {

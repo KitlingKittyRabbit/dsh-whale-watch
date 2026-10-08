@@ -4,7 +4,7 @@
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.8.1</small></strong></div>
+    <div class="brand"><svg viewBox="0 0 100 80" aria-hidden="true"><path d="M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8" fill="#6b91da"/><path d="M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4" fill="#fff"/><circle cx="36" cy="35" r="4" fill="#182b49"/><ellipse cx="27" cy="45" rx="6" ry="3" fill="#e8a6ae"/><path d="M47 18c0-8-10-12-12-6m12 6c1-8 9-13 12-7" fill="none" stroke="#8fcadf" stroke-width="5" stroke-linecap="round"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.8.2</small></strong></div>
     <nav aria-label="主导航"><button class="nav active" data-tab="results">巡查<span>↗</span></button><button class="nav" data-tab="context">专题<span>≡</span></button><button class="nav" data-tab="settings">设置<span>⚙</span></button></nav>
     <div class="aside-note"><span class="dot"></span>本机工作台<p>发现具体言行<br>保留原文与上下文<br>看完点击已阅</p></div>
     <a class="back" href="/">← 回到 DSH</a>
@@ -37,7 +37,7 @@
     </details>
     </section>
     <section id="tab-context" hidden><div class="box"><h2 id="context-current">专题</h2><p class="hint">背景和术语帮助 AI 理解讨论；判断标准在“设置”中。</p>
-      <div class="actions"><button id="context-switch">更换专题</button><button id="context-edit">编辑资料</button><button id="context-builder" class="primary">让 AI 制作</button></div>
+      <p class="hint">“鲸声守望”对话可操作工作台；“让 AI 制作”只整理并保存专题草稿，需另外采用。</p><div class="actions"><button id="context-switch">更换专题</button><button id="context-edit">编辑资料</button><button id="context-builder" class="primary">让 AI 制作</button></div>
       <div id="context-switch-panel" hidden><button id="context-builtin">使用内置 DS 拟人争议</button><label>导入专题文件<input type="file" id="context-file" accept=".json,application/json"></label><p class="hint">选择后自动检查并载入。</p></div>
       <form id="context-editor" hidden><label>专题名称<input id="context-name" required maxlength="100"></label><label>背景说明<textarea id="context-memo" rows="10" maxlength="24000"></textarea></label><h3>术语解释</h3><div id="context-term-editor"></div><button type="button" id="context-add-term">添加术语</button><div class="actions"><button class="primary" type="submit">保存资料</button><button type="button" id="context-cancel">取消</button></div></form>
       <div id="context-draft" hidden><h3 id="context-draft-name"></h3><button id="context-preview-draft">查看草稿</button><button class="primary" id="context-apply-draft">采用这份配置</button><div id="context-draft-preview" hidden></div></div>
@@ -45,6 +45,7 @@
       <details><summary>更多</summary><div class="actions"><a href="/plugins/dafeiyu-patrol/api/context/export" download>导出专题文件</a><button id="context-undo" hidden>撤销上次修改</button><button id="context-unload" hidden>卸下专题</button></div></details>
     </div></section>
     <section id="tab-settings" hidden>
+      <form id="data-key-form" class="box"><h2>数据服务</h2><p class="hint">SocialDataX 数据密钥只在本机保存，不进入聊天或模型材料。浏览器自动采集已停用。</p><p id="data-key-status" class="hint"></p><label>SocialDataX API Key<input id="data-key" type="password" autocomplete="off" spellcheck="false" placeholder="在这里填写数据商密钥"></label><div class="actions"><button id="save-data-key" type="submit" class="primary" disabled>保存数据密钥</button><button id="clear-data-key" type="button" hidden>清除数据密钥</button></div></form>
       <form id="settings-form"><div class="box"><h2>模型与扫描范围</h2><p class="hint">默认复用 DSH 的模型和凭据。这里只选择模型，不保存 API 密钥。</p><div class="grid-two"><label>模型服务<select id="provider"><option value="">跟随 DSH 默认模型</option></select></label><label>分析模型<select id="model"><option value="">跟随默认模型</option></select></label></div><div class="grid-three"><label>每轮笔记上限<input id="maxNotes" type="number" min="1" max="30" required></label><label hidden>旧评论采样上限<input id="maxComments" type="number" min="0" max="50" required></label><label>单独导入及示例分析上限<input id="maxAnalysis" type="number" min="1" max="100" required></label></div><p class="hint">分析上限限制调用条数，每条回复最多8,192 token（思考也可能计入）。失败调用也占用额度；相同内容、规则和模型复用已保存的结果。</p></div>
       <div class="box"><h2>判断规则</h2><p class="hint">规则用于识别具体言行。修改用于后续分析，旧结论保留；需要重算时在对应篇目点击“重新分析整篇”。</p><label class="sr-only" for="rules">判断规则</label><textarea id="rules" rows="15" required></textarea></div><div class="actions"><button class="primary" type="submit">保存设置</button></div></form>
     </section>

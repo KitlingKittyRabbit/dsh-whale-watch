@@ -1,6 +1,7 @@
 const BASE = '/plugins/dafeiyu-patrol/api';
 const $ = id => document.getElementById(id);
-let state, catalog, filter = 'all', offset = 0, total = 0, activeTab = 'results', lastResults = '', initialized = false;
+const requestedTab = new URLSearchParams(location.search).get('tab');
+let state, catalog, filter = 'all', offset = 0, total = 0, activeTab = ['results', 'topic', 'settings'].includes(requestedTab) ? requestedTab : 'results', lastResults = '', initialized = false;
 let topicEditing = null, materialHash = null, topicLoading = false;
 const pageSize = 20;
 const names = { normal: '其它', review: '可疑', uncertain: '其它' };
@@ -65,6 +66,11 @@ async function refresh() {
   }
   $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 评论及回复自动分页读取，受费用上限限制 · ${s.discussionNoteLimit} 篇整篇分析。结果按当前搜索排序读取。`;
   const running = !!state.activeJob;
+  $('data-key-status').textContent = state.dataService?.configured ? '数据密钥已配置。' : '尚未配置数据密钥；可先导入原文或分析已保存内容。';
+  $('data-key').disabled = running;
+  $('save-data-key').disabled = running || !$('data-key').value.trim();
+  $('clear-data-key').hidden = !state.dataService?.configured;
+  $('clear-data-key').disabled = running;
   $('job-box').classList.toggle('running', running);
   $('job-spinner').hidden = !running; $('job-live-badge').hidden = !running; $('job-waiting').hidden = !running;
   $('clear-collection').disabled = running || !state.collection?.canClear;
@@ -159,10 +165,13 @@ function discussionCard(item) {
 }
 async function action(button, path, data = {}) {
   button.disabled = true;
-  try { const result = await api(path, data); notice(result.message || '操作完成'); await refresh(); }
+  try { const result = await api(path, data); if (path === '/data-key') $('data-key').value = ''; notice(result.message || '操作完成'); await refresh(); }
   catch (error) { notice(error.message, true); }
   finally { button.disabled = false; }
 }
+$('data-key').addEventListener('input', () => { $('save-data-key').disabled = !!state?.activeJob || !$('data-key').value.trim(); });
+$('data-key-form').addEventListener('submit', async event => { event.preventDefault(); if (!state || state.activeJob || !$('data-key').value.trim()) return; await action($('save-data-key'), '/data-key', { apiKey: $('data-key').value }); $('save-data-key').disabled = !!state.activeJob || !$('data-key').value.trim(); });
+$('clear-data-key').addEventListener('click', () => action($('clear-data-key'), '/data-key', { apiKey: '' }));
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => { tab(button.dataset.tab); if (activeTab === 'results') refreshResults(true).catch(e => notice(e.message, true)); }));
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { filter = button.dataset.filter; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b === button)); refreshResults(true).catch(e => notice(e.message, true)); }));
 $('save-search-options').addEventListener('click', () => action($('save-search-options'), '/settings', { ...state.settings, ...searchSelection() }));
@@ -260,3 +269,5 @@ $('context-editor').addEventListener('submit', async e => {
   e.preventDefault(); topicEditing.config.name = $('context-name').value; topicEditing.config.background.memo = $('context-memo').value;
   if (await contextAction('edit', topicEditing)) { $('context-editor').hidden = true; topicEditing = null; }
 });
+
+tab(activeTab);

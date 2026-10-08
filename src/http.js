@@ -38,7 +38,7 @@ export function createHandler(engine) {
           const item = engine.store.data.items.find(i => i.id === imageRoute[1]);
           const image = item?.images?.find(i => i.index === Number(imageRoute[2]));
           if (!image?.attachment || !engine.model.ctx?.attachments) return send(res, 404, { error: '配图未保存' });
-          const loaded = await engine.model.ctx.attachments.readImage(image.attachment);
+          const loaded = await engine.readSavedImage(item.id, image.index);
           res.writeHead(200, { 'content-type': loaded.ref.mediaType, 'cache-control': 'private, no-store', 'x-content-type-options': 'nosniff' });
           res.end(loaded.data); return;
         }
@@ -62,7 +62,7 @@ export function createHandler(engine) {
         if (route === '/api/results') return send(res, 200, engine.results({ filter: url.searchParams.get('filter') || 'all', limit: Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 50)), offset: Math.max(0, Number(url.searchParams.get('offset')) || 0) }));
         if (route === '/api/export') {
           res.setHeader('content-disposition', 'attachment; filename="dafeiyu-patrol-results.json"');
-          return send(res, 200, { exportedAt: new Date().toISOString(), rules: engine.store.data.settings.rules, background: engine.store.data.background, items: engine.store.data.items });
+          return send(res, 200, engine.exportRecords());
         }
         if (route === '/api/evaluation/export') {
           res.setHeader('content-disposition', 'attachment; filename="dafeiyu-patrol-evaluation.json"');

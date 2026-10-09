@@ -32,8 +32,8 @@ export const startSchema = z.object({
   maxAnalysis: settingsSchema.shape.maxAnalysis.optional(),
   analyze: z.boolean().optional(),
   readImages: z.boolean().optional(),
-  maxImagesPerNote: settingsSchema.shape.maxImagesPerNote.optional(),
-  maxVision: settingsSchema.shape.maxVision.optional(),
+  maxImagesPerNote: settingsSchema.shape.maxImagesPerNote.unwrap().optional(),
+  maxVision: settingsSchema.shape.maxVision.unwrap().optional(),
   backgroundExpanded: z.boolean().optional(),
   excludeSeen: z.boolean().default(true),
 });

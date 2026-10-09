@@ -18,6 +18,25 @@ async function fixture(t, model) {
   const root = await mkdtemp(join(tmpdir(), 'patrol-images-')); t.after(() => rm(root, { recursive: true, force: true }));
   return new PatrolEngine(new Store(root), { close: async () => {} }, model).init();
 }
+test('启动任务沿用已保存的看图额度和每条配图上限，单轮覆盖不改默认', async t => {
+  let reads = 0;
+  const engine = await fixture(t, {
+    readImages: async () => { reads++; return { pages: [], complete: true }; },
+    cacheKey: () => 'test',
+  });
+  await engine.settings({ ...engine.store.data.settings, maxVision: 6, maxImagesPerNote: 2, discussionNoteLimit: 6 });
+  for (let n = 0; n < 6; n++) {
+    await engine.store.upsert({ ...note, sourceKey: `note:${n.toString(16).padStart(24, '0')}`, vision: undefined });
+  }
+  await engine.start({}, 'analyze'); await engine.active.promise;
+  assert.equal(engine.store.data.jobs.at(-1).options.maxVision, 6);
+  assert.equal(engine.store.data.jobs.at(-1).options.maxImagesPerNote, 2);
+  assert.equal(reads, 6);
+  assert.equal(engine.options({ maxVision: 2, maxImagesPerNote: 1 }).maxVision, 2);
+  assert.equal(engine.options({ maxVision: 2, maxImagesPerNote: 1 }).maxImagesPerNote, 1);
+  assert.equal(engine.store.data.settings.maxVision, 6);
+  assert.equal(engine.store.data.settings.maxImagesPerNote, 2);
+});
 test('配图下载限定公开图片域名；失败保留页码，停止后不继续下载', async () => {
   assert.ok(validateImageUrl('https://sns-webpic-qc.xhscdn.com/a'));
   for (const url of ['http://sns.xhscdn.com/a', 'https://xhscdn.com.evil.example/a', 'https://127.0.0.1/a', 'https://u:p@xhscdn.com/a', 'https://xhscdn.com:8000/a']) assert.throws(() => validateImageUrl(url));

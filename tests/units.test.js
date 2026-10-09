@@ -219,3 +219,38 @@ test('继续明确重算任务仍只处理未完成项，不重算成功项、�
   assert.ok(p.readAt); assert.ok(c.readAt);
   assert.equal(e.store.data.items.find(i=>i.sourceKey===note(1).sourceKey).analysis,null);
 });
+
+test('重算已有结论中途停止，再继续必须处理尚未重算的旧结果，不能因有旧结论跳过', async t => {
+  const calls = [], e = await engine(t,calls);
+  const p = await e.store.upsert(note(0));
+  for (let c=0;c<5;c++) await e.store.upsert(comment(0,c));
+  await e.retry({id:p.id}); await e.active.promise;
+  const initial = e.model.analyzeDiscussion;
+  let resolveStarted, batches = 0;
+  const started = new Promise(resolve => { resolveStarted = resolve; });
+  e.model.analyzeDiscussion = async (records,targets,settings,signal) => {
+    batches++;
+    if (batches===2) { resolveStarted(); await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(signal.reason),{once:true})); }
+    return initial(records,targets);
+  };
+  await e.retry({id:p.id}); await started; await e.stop();
+  const stopped = e.store.data.jobs.at(-1);
+  assert.equal(stopped.analyzed,3); assert.equal(stopped.remainingTargetIds.length,3);
+  assert.equal(e.state().counts.entries.pending,0,'旧结论保留，任务剩余目标与普通待分析队列不同');
+  const remaining = [...stopped.remainingTargetIds];
+  e.model.analyzeDiscussion = initial;
+  const before = calls.length;
+  await e.resume({jobId:stopped.id}); await e.active.promise;
+  assert.equal(calls.length,before+1); assert.deepEqual(calls.at(-1).targets,remaining);
+  assert.deepEqual(e.store.data.jobs.at(-1).remainingTargetIds,[]);
+});
+
+test('升级前已中断的整篇重算可按结果时间恢复剩余目标，已重算条目不重复', async t => {
+  const calls=[],e=await engine(t,calls),p=await e.store.upsert(note(0)),c=await e.store.upsert(comment(0,1));
+  await e.retry({id:p.id});await e.active.promise;
+  const old=e.store.data.jobs.at(-1);old.status='cancelled';old.startedAt='2026-10-09T10:00:00.000Z';delete old.remainingTargetIds;
+  p.analysis={...p.analysis,analyzedAt:'2026-10-09T10:01:00.000Z'};
+  c.analysis={...c.analysis,analyzedAt:'2026-10-09T09:00:00.000Z'};
+  const before=calls.length;await e.resume({jobId:old.id});await e.active.promise;
+  assert.equal(calls.length,before+1);assert.deepEqual(calls.at(-1).targets,[c.id]);
+});

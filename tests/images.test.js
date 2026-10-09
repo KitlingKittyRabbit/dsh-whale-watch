@@ -39,6 +39,8 @@ test('启动任务沿用已保存的看图额度和每条配图上限，单轮�
 });
 test('配图下载限定公开图片域名；失败保留页码，停止后不继续下载', async () => {
   assert.ok(validateImageUrl('https://sns-webpic-qc.xhscdn.com/a'));
+  assert.ok(validateImageUrl('https://sns-i14.rednotecdn.com/a'));
+  for (const url of ['https://sns-i14.rednotecdn.com.evil.example/a', 'http://sns-i14.rednotecdn.com/a', 'https://evil.rednotecdn.com/a']) assert.throws(() => validateImageUrl(url));
   for (const url of ['http://sns.xhscdn.com/a', 'https://xhscdn.com.evil.example/a', 'https://127.0.0.1/a', 'https://u:p@xhscdn.com/a', 'https://xhscdn.com:8000/a']) assert.throws(() => validateImageUrl(url));
   let saves = 0;
   const images = await captureImages([{ index: 1, url: 'good' }, { index: 2, url: 'bad' }], { saveImage: async input => { assert.equal(input.data[0], 1); saves++; return ref; } }, null, async url => { if (url === 'bad') throw new Error('下载失败'); return { data: Buffer.from([1]), mediaType: 'image/png' }; });
@@ -153,11 +155,39 @@ test('笔记自己的标题可以作为依据，评论所属标题不能作为�
   assert.equal(parseAnalysis(JSON.stringify(answer), item).decision, 'normal');
   assert.throws(() => parseAnalysis(JSON.stringify(answer), { ...item, kind: 'comment' }), /本条原文/);
 });
-test('多图单次读取预留文字与思考额度，小图沿用原限额；绑定配置与实际发送一致',async()=>{
+test('少图与多图均预留足够文字和思考额度；绑定配置与实际发送一致',async()=>{
  const configs=[];const sends=[];
  const model=new DshModel({agentDefaultModel:{currentSelection:()=>({provider:'fixture',model:'vision'})},llm:{prepareCall:async config=>{configs.push(config);return {config,inputModalities:['text','image'],stream:options=>{sends.push(options);return output({pages:options.messages[0].content.filter(b=>b.type==='image').map((_,i)=>({index:i+1,text:'测试文字',description:'测试图',uncertain:false}))});}};}}});
  const images=Array.from({length:7},(_,i)=>({index:i+1,attachment:ref}));
  await model.readImages({...note,images:images.slice(0,1),coverage:{imageCount:1}},defaultSettings());
  await model.readImages({...note,images,coverage:{imageCount:7}},defaultSettings());
- assert.deepEqual(configs.map(c=>c.maxTokens),[8000,32768]);assert.deepEqual(sends.map(c=>c.maxTokens),[8000,32768]);
+ assert.deepEqual(configs.map(c=>c.maxTokens),[32768,32768]);assert.deepEqual(sends.map(c=>c.maxTokens),[32768,32768]);
+});
+
+test('补图沿用已保存链接与页码，累计32MB仍包含之前保存的图片', async () => {
+  let reads = 0;
+  const result = await captureImages([{ index: 3, url: 'saved' }, { index: 4, url: 'next' }], { saveImage: async () => ref }, undefined,
+    async () => { reads++; return { data: Buffer.alloc(2 * 1024 * 1024), mediaType: 'image/png' }; }, 31 * 1024 * 1024);
+  assert.equal(reads, 1); assert.match(result[0].error, /32MB/); assert.match(result[1].error, /32MB/);
+});
+
+test('没有文字的评论配图使用画面依据，不凭空生成OCR文字要求摘引', () => {
+  const visual = { ...note, kind: 'comment', text: '', title: '', vision: { pages: [{ index: 1, text: '', description: '无文字的画面', uncertain: false }], complete: true } };
+  const material = analysisMaterial(visual); assert.equal(material.text, '');
+  const answer = { ...normal, targetQuote: '', evidence: [], interpretation: '解释画面', decision: 'review', imageEvidence: [{ index: 1, observation: '测试画面依据' }] };
+  assert.equal(parseAnalysis(JSON.stringify(answer), material).decision, 'review');
+});
+
+test('纯画面评论的初判与证据核对都收到本评论配图，且通过相同的页码校验', async () => {
+  const visual = { ...note, kind: 'comment', text: '', title: '所属笔记标题', vision: { pages: [{ index: 1, text: '', description: '本评论已读取的画面', uncertain: false }], complete: true } };
+  const imageEvidence = [{ index: 1, observation: '本评论的测试画面依据' }];
+  let calls = 0;
+  const model = new DshModel({ agentDefaultModel: { currentSelection: () => ({ provider: 'fixture', model: 'text' }) }, llm: { stream: request => {
+    calls++; const input = JSON.parse(request.messages[0].content[0].text);
+    assert.match(input.target.images, /本评论已读取的画面/); assert.equal(input.target.text, '');
+    return output(calls === 1 ? { ...normal, targetQuote: '', interpretation: '解释本评论画面', decision: 'review', categories: ['人身攻击'], evidence: [], imageEvidence }
+      : { verdict: 'supported', reason: '测试核对依据属于目标评论', findings: [], imageEvidence });
+  } } });
+  const result = await model.analyze(visual, defaultSettings());
+  assert.equal(calls, 2); assert.equal(result.decision, 'review'); assert.equal(result.imageEvidence[0].index, 1);
 });

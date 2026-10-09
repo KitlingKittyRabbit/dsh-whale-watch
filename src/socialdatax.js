@@ -24,8 +24,18 @@ const noteId = url => /\/(?:explore|discovery\/item|search_result)\/([a-f0-9]{24
 export class ApiLimit extends Error {}
 
 export class SocialDataX {
-  constructor(root, attachments, fetcher = fetch) {
-    this.credentialsPath = join(root, 'socialdatax-key.json'); this.attachments = attachments; this.fetcher = fetcher; this.hasKey = false;
+  constructor(root, attachments, fetcher = fetch, imageLoader) {
+    this.credentialsPath = join(root, 'socialdatax-key.json'); this.attachments = attachments; this.fetcher = fetcher; this.imageLoader = imageLoader; this.hasKey = false;
+  }
+  async retrySavedImages(item, signal) {
+    // Explicit whole-discussion retries may recover failed CDN downloads using
+    // already saved URLs. Never re-query the paid API or exceed saved page caps.
+    const missing = (item.images || []).filter(image => !image.attachment && image.sourceUrl);
+    if (!missing.length) return 0;
+    const savedBytes = item.images.reduce((n, image) => n + (image.attachment?.bytes || 0), 0);
+    const recovered = await captureImages(missing.map(image => ({ index: image.index, url: image.sourceUrl })), this.attachments, signal, this.imageLoader, savedBytes);
+    for (const image of recovered) item.images[item.images.findIndex(old => old.index === image.index)] = image;
+    return recovered.filter(image => image.attachment).length;
   }
   async init() {
     try { const saved = JSON.parse(await readFile(this.credentialsPath, 'utf8')); this.key = saved.apiKey || ''; }

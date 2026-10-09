@@ -91,7 +91,7 @@ test('同批分析先收到完整已保存讨论，证据核对仍带相同讨�
   const calls = [];
   const model = new DshModel({ agentDefaultModel: { currentSelection: () => ({ provider: 'fixture', model: 'text' }) }, llm: { stream: request => {
     calls.push(request); return output(calls.length === 1 ? { results: [{ id: 'a', analysis: review }, { id: 'b', analysis: { ...normal('我反对'), evidence: ['去骚扰她'] } }] }
-      : { verdict: 'supported', reason: '依据属于目标发言', findings: [finding] });
+      : calls.length === 2 ? { verdict: 'supported', reason: '依据属于目标发言', findings: [finding] } : { ...normal('我反对'), evidence: ['去骚扰她'] });
   } } });
   const rows = await model.analyzeDiscussion(records, records.slice(1), defaultSettings(), new AbortController().signal);
   assert.equal(rows[0].analysis.decision, 'review'); assert.match(rows[1].error, /原文不符/);
@@ -235,4 +235,15 @@ test('默认筛选持久化，单轮覆盖不修改默认；继续任务沿用�
   await e.settings({...e.store.data.settings,...chosen});
   await e.resume({jobId:job.id});await e.active.promise;
   for(const[key,value]of Object.entries(DEFAULT_SEARCH_SETTINGS))assert.equal(e.store.data.jobs.at(-1).options[key],value);
+});
+
+test('明确重算可补回下载失败的原图，不查询数据商、不扩大已保存的页码范围', async () => {
+  let downloads = 0;
+  const attachment = { attachmentId: 'sha256:recovered', bytes: 2, mediaType: 'image/png' };
+  const source = new SocialDataX('/unused', { saveImage: async () => attachment }, () => assert.fail('不得查询付费API'),
+    async url => { downloads++; assert.equal(url, 'saved-image-url'); return { data: Buffer.from([1, 2]), mediaType: 'image/png' }; });
+  const item = { images: [{ index: 1, attachment }, { index: 2, sourceUrl: 'saved-image-url', error: '临时失败' }], coverage: { imageCount: 10 } };
+  assert.equal(await source.retrySavedImages(item, new AbortController().signal), 1);
+  assert.equal(downloads, 1); assert.equal(item.images.length, 2); assert.equal(item.images[1].attachment, attachment);
+  assert.equal(await source.retrySavedImages(item, new AbortController().signal), 0); assert.equal(downloads, 1);
 });

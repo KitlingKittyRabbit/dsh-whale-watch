@@ -148,14 +148,14 @@ export class PatrolEngine {
     const settings = this.store.data.settings;
     return { ...settings, ...requested, urls, keywords: urls.length && !requested.keywords ? [] : requested.keywords || settings.keywords, analyze: requested.analyze ?? true };
   }
-  async start(input = {}, mode = 'scan', backgroundPlan = null, resumeOnlyPending = false) {
+  async start(input = {}, mode = 'scan', backgroundPlan = null, resumeOnlyPending = false, remainingTargetIds) {
     if (this.active) throw new Error('已有任务运行中，请先停止或等待完成');
     const options = this.analysisSettings(this.options(input));
     const needsCollection = mode === 'scan' || mode === 'background' && (backgroundPlan?.source !== 'existing' || backgroundPlan?.refreshSources && backgroundPlan?.urls?.length);
     if (needsCollection && options.collectionSource !== 'socialdatax') throw new Error(BROWSER_DISABLED_MESSAGE);
     if (needsCollection && !this.apiCollector?.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key，或导入原文进行离线分析');
-    const job = { id: randomUUID(), mode, resumeOnlyPending, status: 'running', startedAt: new Date().toISOString(),
-      options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, searchSummary: searchSummary(options), notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
+    const job = { id: randomUUID(), mode, resumeOnlyPending, ...(remainingTargetIds ? { remainingTargetIds: [...remainingTargetIds] } : {}), status: 'running', startedAt: new Date().toISOString(),
+      options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, searchSummary: searchSummary(options), notesAttempted: 0, notesRead: 0, notesExcluded: 0, skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, quoteRepairCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
     this.store.data.jobs.push(job);
     this.store.data.jobs = this.store.data.jobs.slice(-100);
     const controller = new AbortController();
@@ -226,7 +226,7 @@ export class PatrolEngine {
         // A picture-only note needs a successful visual reading first.
         if (!analysisMaterial(item).text.trim() && !item.vision?.pages?.length) {
           item.analysis = { decision: 'uncertain', categories: ['信息不足'], reason: '未读到文字，图片内容尚未识别。', evidence: [], uncertainties: ['图片文字未识别'], confidence: 0, analyzedAt: new Date().toISOString() };
-        } else item.analysis = await this.model.analyze(item, options, signal, { onVerification: () => job.verificationCalls++ });
+        } else item.analysis = await this.model.analyze(item, options, signal, { onVerification: () => job.verificationCalls++, onRepair: () => { job.quoteRepairCalls++; progress('模型引文校验未通过，单独修复一次；严格校验仍保留，模型费用另计'); } });
         item.analysisKey = key; item.analysisError = null; job.analyzed++;
       } catch (error) {
         if (signal.aborted) throw error;
@@ -248,13 +248,20 @@ export class PatrolEngine {
       if (!candidates.length) return;
       let records = unit.records;
       const pending = candidates.filter(i => {
-        if (!force && i.analysis && !i.analysisError) { job.cached++; return false; }
+        if (!force && i.analysis && !i.analysisError && !job.remainingTargetIds?.includes(i.id)) { job.cached++; return false; }
         return true;
       });
       if (!pending.length) return;
       if (discussionsUsed >= discussionCap) { job.analysisDeferred = true; return; }
       discussionsUsed++; job.discussionsAttempted = discussionsUsed;
-      for (const record of unit.members) await prepareImages(record);
+      if (force) { job.remainingTargetIds = pending.map(i => i.id); await this.store.save(); }
+      for (const record of unit.members) {
+        if (force && this.apiCollector?.retrySavedImages) {
+          const recovered = await this.apiCollector.retrySavedImages(record, signal);
+          if (recovered) { progress(`重新下载已保存链接中的配图 ${recovered} 张；未重新查询数据 API`); await this.store.save(); }
+        }
+        await prepareImages(record);
+      }
       const note = unit.note;
       for (const comment of unit.comments) comment.coverage = { ...comment.coverage,
         contextImagesUnread: !!note?.coverage?.imageCount && !note.vision?.complete,
@@ -270,12 +277,12 @@ export class PatrolEngine {
         signal.throwIfAborted(); analysisUsed += targets.length;
         progress(`整篇分析第 ${discussionsUsed} 篇／上限 ${discussionCap}：“${records[0].title}”及${unit.comments.length}条已保存评论，已处理${processed}／${pending.length}条；本批${targets.length}条${targets.some(i => i.analysisError) ? '，失败项单独重试' : ''}`);
         let results;
-        try { results = await this.model.analyzeDiscussion(records, targets, settings, signal, { onVerification: () => job.verificationCalls++, onDiscussionCall: () => job.discussionCalls++ }); }
+        try { results = await this.model.analyzeDiscussion(records, targets, settings, signal, { onVerification: () => job.verificationCalls++, onRepair: () => { job.quoteRepairCalls++; progress('模型引文校验未通过，单独修复一次；严格校验仍保留，模型费用另计'); }, onDiscussionCall: () => job.discussionCalls++ }); }
         catch (error) { if (signal.aborted) throw error; results = targets.map(i => ({ id: i.id, error: error.message })); }
         for (const target of targets) {
           const row = results.find(r => r.id === target.id);
           if (target.analysis) target.history = [...(target.history || []), { text: target.text, analysis: target.analysis, review: target.review, images: target.images, vision: target.vision, readAt: target.readAt, at: new Date().toISOString(), reason: '结合整篇讨论重新分析' }].slice(-5);
-          if (row?.analysis) { target.analysis = row.analysis; target.analysisKey = this.model.cacheKey(target, settings); target.analysisError = null; job.analyzed++; }
+          if (row?.analysis) { target.analysis = row.analysis; target.analysisKey = this.model.cacheKey(target, settings); target.analysisError = null; job.analyzed++; if (job.remainingTargetIds) job.remainingTargetIds = job.remainingTargetIds.filter(id => id !== target.id); }
           else { target.analysisError = row?.error || '整篇讨论分析遗漏本条'; job.failed++; }
         }
         processed += targets.length;
@@ -301,7 +308,7 @@ export class PatrolEngine {
             if (analysisUsed >= options.maxAnalysis) break;
             analysisUsed++; progress(`示例评估 ${analysisUsed}／${fixture.cases.length}：${sample.label}`);
             const row = { ...sample };
-            try { row.analysis = await this.model.analyze(evaluationItem(sample), options, signal, { onVerification: () => job.verificationCalls++ }); job.analyzed++; }
+            try { row.analysis = await this.model.analyze(evaluationItem(sample), options, signal, { onVerification: () => job.verificationCalls++, onRepair: () => { job.quoteRepairCalls++; progress('模型引文校验未通过，单独修复一次；严格校验仍保留，模型费用另计'); } }); job.analyzed++; }
             catch (error) { if (signal.aborted) throw error; row.error = error.message; job.failed++; }
             report.verificationCalls = job.verificationCalls; report.rows.push(row); report.summary = summarizeEvaluation(report.rows, fixture.cases.length);
             await this.store.save();
@@ -333,7 +340,7 @@ export class PatrolEngine {
       job.status = job.skippedNotes.length || job.failed || job.imagesMissing || job.discussionGaps.length || job.apiStopReason || job.analysisDeferred ? 'partial' : 'completed';
       const deferred = job.analysisDeferred ? '达到本轮按篇分析上限，剩余篇目可继续分析。' : '';
       const coverage = mode === 'scan' ? `排除已查 ${job.notesExcluded} 篇；检查 ${job.notesAttempted} 篇，读到 ${job.notesRead} 篇，${job.skippedNotes.length} 篇未读取。` : '';
-      progress(`${job.status === 'partial' ? '部分完成' : '完成'}：${coverage}${deferred}整篇分析 ${discussionsUsed} 篇；采集 ${job.collected} 条，分析 ${job.analyzed} 条，复用 ${job.cached} 条，失败 ${job.failed} 条；疑似问题证据核对 ${job.verificationCalls} 次；配图读取 ${job.visionRead} 篇、复用 ${job.visionCached} 篇、失败 ${job.visionFailed} 篇、不完整 ${job.imagesMissing} 篇。`);
+      progress(`${job.status === 'partial' ? '部分完成' : '完成'}：${coverage}${deferred}整篇分析 ${discussionsUsed} 篇；采集 ${job.collected} 条，分析 ${job.analyzed} 条，复用 ${job.cached} 条，失败 ${job.failed} 条；疑似问题证据核对 ${job.verificationCalls} 次；引文修复 ${job.quoteRepairCalls} 次；配图读取 ${job.visionRead} 篇、复用 ${job.visionCached} 篇、失败 ${job.visionFailed} 篇、不完整 ${job.imagesMissing} 篇。`);
     } catch (error) {
       job.status = signal.aborted ? 'cancelled' : error instanceof NeedsAttention ? 'paused' : 'failed';
       if (mode === 'background' && this.store.data.background.draft?.jobId === job.id) Object.assign(this.store.data.background.draft, { status: job.status, error: error.message });
@@ -523,8 +530,16 @@ export class PatrolEngine {
     const options = { ...(urls?.length ? { urls } : keywords?.length ? { keywords } : {}), maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort: noteSort || 'time_descending', publishTimeRange: publishTimeRange || 'all', noteType: noteType || 'all', commentSort: commentSort || 'default' };
     // Stopped scans may already have saved records that their seen-note cache would skip.
     const mode = job.mode === 'scan' && job.status !== 'paused' && analyze && this.state().counts.pending > 0 ? 'analyze' : job.mode;
-    const result = await this.start(options, mode, job.backgroundPlan, true);
-    return { ...result, message: mode === 'analyze' || mode.startsWith('item:') ? '已继续分析尚未分析和失败内容，已有成功结论不会重算；仍遵守原范围和每轮上限。' : mode === 'scan' ? '已按原范围继续采集；已查笔记去重，已有成功结论不会重算。' : '任务已继续，已保存的结果保留。' };
+    let remainingTargetIds = job.remainingTargetIds;
+    if (mode.startsWith('item:') && !Array.isArray(remainingTargetIds)) {
+      // Upgrade interrupted explicit recomputations created before target
+      // snapshots existed, using actual saved analysis timestamps.
+      const item = this.store.data.items.find(i => i.id === mode.slice(5));
+      const members = item ? findUnit(item, this.store.data.items)?.members || [item] : [];
+      remainingTargetIds = members.filter(i => i.analysisError || !i.analysis?.analyzedAt || i.analysis.analyzedAt < job.startedAt).map(i => i.id);
+    }
+    const result = await this.start(options, mode, job.backgroundPlan, true, remainingTargetIds);
+    return { ...result, message: mode === 'analyze' || mode.startsWith('item:') ? '已继续上次任务尚未完成和失败的内容，本次任务已完成的结果不会重复重算；仍遵守原范围和每轮上限。' : mode === 'scan' ? '已按原范围继续采集；已查笔记去重，已有成功结论不会重算。' : '任务已继续，已保存的结果保留。' };
   }
   async import(input) {
     if (this.active) throw new Error('请等当前任务结束后再导入');

@@ -3,7 +3,7 @@ import { z } from 'zod';
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export function validateImageUrl(raw) {
   const url = new URL(raw);
-  if (url.protocol !== 'https:' || url.username || url.password || url.port || !(/(?:^|\.)xhscdn\.com$/.test(url.hostname) || url.hostname === 'ci.xiaohongshu.com')) throw new Error('配图地址不是小红书公开图片地址');
+  if (url.protocol !== 'https:' || url.username || url.password || url.port || !(/(?:^|\.)xhscdn\.com$/.test(url.hostname) || /^sns-i\d+\.rednotecdn\.com$/.test(url.hostname) || url.hostname === 'ci.xiaohongshu.com')) throw new Error('配图地址不是小红书公开图片地址');
   return url.href;
 }
 export async function fetchImage(raw, signal) {
@@ -18,8 +18,8 @@ export async function fetchImage(raw, signal) {
   }
   return { data: Buffer.concat(chunks), mediaType };
 }
-export async function captureImages(sources, attachments, signal, load = fetchImage) {
-  const images = []; let bytes = 0;
+export async function captureImages(sources, attachments, signal, load = fetchImage, savedBytes = 0) {
+  const images = []; let bytes = savedBytes;
   for (const source of sources) {
     signal?.throwIfAborted();
     const image = { index: source.index, sourceUrl: source.url };
@@ -54,7 +54,7 @@ export function imageContext(item, limit = 18000) {
   return `配图共${item.coverage.imageCount}张；读取${item.vision?.pages?.length || 0}张；${item.vision?.complete ? '本次已读取所保存的全部配图' : '配图信息不完整'}。${item.vision?.error || ''}\n${recognized}`.slice(0, limit);
 }
 export function analysisMaterial(item) {
-  const ownImageText = item.kind === 'note' || item.coverage?.imageCount > 0 ? (item.vision?.pages || []).map(p => `【配图${p.index}机器识别文字，需人工核对】\n${p.text}`).join('\n\n') : '';
+  const ownImageText = item.kind === 'note' || item.coverage?.imageCount > 0 ? (item.vision?.pages || []).filter(p => p.text.trim()).map(p => `【配图${p.index}机器识别文字，需人工核对】\n${p.text}`).join('\n\n') : '';
   return { ...item, text: [item.text, ownImageText].filter(Boolean).join('\n\n'),
     coverage: { ...item.coverage, imagesUnread: item.coverage?.imageCount > 0 ? !item.vision?.complete : item.coverage?.imagesUnread },
   };

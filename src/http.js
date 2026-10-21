@@ -9,6 +9,8 @@ const assets = {
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/style.css': ['style.css', 'text/css; charset=utf-8'],
   '/native.css': ['native.css', 'text/css; charset=utf-8'],
+  '/assets/watch-desk-duo-v2.webp': ['assets/watch-desk-duo-v2.webp', 'image/webp'],
+  '/assets/discussion-search.svg': ['assets/discussion-search.svg', 'image/svg+xml'],
 };
 async function body(req) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new Error('请求应使用 JSON 格式');
@@ -91,6 +93,8 @@ export function createHandler(engine) {
         if (route === '/api/start') return send(res, 200, await engine.start(data));
         if (route === '/api/cache/clear') return send(res, 200, await engine.clearSeenCache());
         if (route === '/api/cache/restore') return send(res, 200, await engine.restoreSeenCache());
+        if (route === '/api/analysis-cache/clear') return send(res, 200, await engine.clearAnalysisCache());
+        if (route === '/api/analysis-cache/restore') return send(res, 200, await engine.restoreAnalysisCache());
         if (route === '/api/analyze/item') return send(res, 200, await engine.retry(data));
         if (route === '/api/analyze') return send(res, 200, await engine.start(data, 'analyze'));
         if (route === '/api/evaluate') return send(res, 200, await engine.start(data, 'evaluate'));

@@ -17,12 +17,13 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     if (!response.ok) throw new Error(result.error || `请求失败：${response.status}`);
     return result;
   }
-  function WhaleIcon({ size = 20 }) {
-    return h('svg', { width: size, height: size, viewBox: '0 0 100 80', fill: 'none', 'aria-hidden': true },
-      h('path', { d: 'M16 43C18 16 56 9 75 30l17-10-2 21 7 7-21 3c-7 25-56 26-60-8', fill: '#6b91da' }),
-      h('path', { d: 'M19 47c8-7 19-8 28 0s18 6 29 4c-8 20-49 22-57-4', fill: '#fff' }),
-      h('circle', { cx: 36, cy: 35, r: 4, fill: '#182b49' }),
-      h('ellipse', { cx: 27, cy: 45, rx: 6, ry: 3, fill: '#e8a6ae' }));
+  function WatchIcon({ size = 20 }) {
+    return h('svg', { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true, style: { display: 'block', flexShrink: 0 } },
+      h('path', { d: 'M10 16H7l-3 3V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v2' }),
+      h('circle', { cx: 16, cy: 15, r: 4 }), h('path', { d: 'm19 18 3 3' }));
+  }
+  function DeskArtwork() {
+    return h('figure', { className: 'patrol-desk-art', 'aria-hidden': true });
   }
   function Button({ children, primary, ...props }) {
     return h('button', { type: 'button', ...props, className: 'patrol-button' + (primary ? ' patrol-primary' : '') + (props.className ? ' ' + props.className : '') }, children);
@@ -239,14 +240,18 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const canContinue = !!job && (['paused', 'cancelled', 'interrupted'].includes(job.status) || job.status === 'partial' && job.analysisDeferred) && job.mode !== 'evaluate';
     const continueLabel = job?.mode === 'analyze' || job?.mode === 'scan' && job.status !== 'paused' && job.options?.analyze && state?.counts.pending > 0 ? '继续分析剩余篇目' : job?.mode === 'scan' ? '继续采集' : '继续任务';
     const route = state?.settings.provider ? state.settings : catalog?.current;
+    const topicName = !state ? '正在读取专题…' : state.background?.activeId && state.background.enabled ? state.context?.active?.name || '自定义资料' : '未选择专题';
     const updateDraft = key => e => setDraft(prev => ({ ...prev, [key]: e.target.value }));
     const updateInput = key => e => setInput(prev => ({ ...prev, [key]: e.target.value }));
     return h('div', { className: 'patrol-native', 'data-patrol-native': true },
       h('div', { className: 'patrol-workbench' },
-        h('header', { className: 'patrol-header' }, h('div', null,
-          h('div', { className: 'patrol-title' }, h(WhaleIcon, { size: 36 }), h('h1', null, '鲸声守望'), h('span', { className: 'patrol-badge' }, '实验版 0.8.5')),
-          h(Hint, null, '对话模式：鲸声守望操作工作台；配置制作助手只整理专题草稿。')),
-          h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话'))),
+        h('header', { className: 'patrol-header patrol-masthead ' + (tab === 'results' ? 'patrol-masthead-scene' : 'patrol-masthead-compact') },
+          tab === 'results' && h(DeskArtwork),
+          h('div', { className: 'patrol-brand-copy' },
+            h('div', { className: 'patrol-title' }, h(WatchIcon, { size: 26 }), h('h1', null, '鲸声守望')),
+            tab !== 'results' && h('p', { className: 'patrol-tagline' }, tab === 'topic' ? '管理背景、术语与讨论语境。' : '管理模型、判断规则与费用额度。'),
+            h('p', { className: 'patrol-hero-topic' }, h('span', null, '当前专题'), h('strong', null, topicName)),
+            h('div', { className: 'patrol-actions' }, h('a', { href: BASE + '/export', download: true, className: 'patrol-button' }, '导出记录 ↓'), h(Button, { onClick: openConversation }, '回到对话')))),
         h('nav', { className: 'patrol-tabs', 'aria-label': '巡查工作台导航' }, ...[['results', '巡查'], ['topic', '专题'], ['settings', '设置']].map(([id, label]) =>
           h(Button, { key: id, 'aria-pressed': tab === id, onClick: () => setTab(id) }, label))),
         notice && h('div', { className: 'patrol-notice' + (notice.error ? ' patrol-error' : ''), role: notice.error ? 'alert' : 'status' }, notice.text),
@@ -259,7 +264,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
             h('div', { className: 'patrol-actions' }, running && h(Button, { disabled: busy, onClick: () => act('/stop') }, '停止任务'),
               !running && canContinue && h(Button, { primary: true, disabled: busy, onClick: () => act('/resume', { jobId: job.id }) }, continueLabel))),
           tab === 'results' && h(React.Fragment, null,
-            h(Hint, null, state.background?.activeId && state.background.enabled ? `当前专题：${state.context?.active?.name || "自定义资料"}` : '请到“专题”选择或编辑背景和术语。'),
+            !(state.background?.activeId && state.background.enabled) && h(Hint, null, '请到“专题”选择或编辑背景和术语。'),
             h('div', { className: 'patrol-stats' }, ...[['未阅讨论', 'unread'], ['可疑', 'suspicious'], ['其它', 'other'], ['待分析', 'pending']].map(([label, key]) =>
               h('div', { key }, h('span', null, label), h('strong', null, `${state.counts[key]}篇`), h('span', { className: 'patrol-stat-entries' }, `${state.counts.entries?.[key] ?? 0}条`)))),
             h(Hint, null, `当前保存 ${state.counts.discussions} 篇笔记讨论${state.counts.standalone ? `，另有 ${state.counts.standalone} 条单独导入` : ''}；原始记录共 ${state.counts.records} 条，已归并显示。`),
@@ -270,6 +275,11 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Hint, null, running ? '任务正在继续处理待分析内容，无需重复点击。上方“本轮失败”只统计本次尝试；这里“仍失败”统计所有保存内容。' : '“分析未阅篇目”只处理尚未分析和失败内容，保留已成功的结果。重新分析整篇会重算该篇所有已保存条目，模型费用另计。')),
             pendingEntries === 0 && retainedEntries > 0 && h(Hint, null, `保留 ${retainedEntries} 条旧结论；如需按新资料重算，点击对应篇目的“重新分析整篇”。`),
             h('details', { className: 'patrol-box' }, h('summary', null, '记录管理'),
+              h('p', { className: 'patrol-meta' }, state.analysisCache ? `可清空旧结论：${state.analysisCache.count} 条，其中未阅 ${state.analysisCache.unreadCount} 条${state.analysisCache.canRestore ? `；可撤销上次清空的 ${state.analysisCache.backupCount} 条` : ''}` : '更新后重启 DSH 可启用此功能'),
+              h(Hint, null, '只清除标为“旧结论”的正文、评论分析；原文、配图及识图缓存、已阅状态和有效新结论保留。清理本身不调用模型；之后点击“分析未阅篇目”才会重新分析未阅内容并产生模型费用。'),
+              h('div', { className: 'patrol-actions' },
+                h(Button, { disabled: busy || running || !state.analysisCache?.count, onClick: () => act('/analysis-cache/clear') }, '清空旧结论缓存'),
+                state.analysisCache?.canRestore && h(Button, { disabled: busy || running, onClick: () => act('/analysis-cache/restore') }, '撤销清空旧结论')),
               h(Hint, null, '清空正文、评论、分析、已阅记录、对应巡查任务及已查缓存；模型、规则、背景和密钥保留。可撤销最近一次清空。'),
               h('div', { className: 'patrol-actions' },
                 h(Button, { disabled: busy || running || !state.collection?.canClear, onClick: () => act('/collection/clear') }, '清空采集记录'),
@@ -351,17 +361,17 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
                   h('option', { value: '' }, draft.visionProvider ? '请选择支持图片的模型' : '跟随内容分析模型'),
                   ...(catalog?.providers.find(p => p.id === draft.visionProvider)?.models || []).filter(m => m.inputModalities?.includes('image')).map(m => h('option', { key: m.id, value: m.id }, m.name || m.id))))),
               h('div', { className: 'patrol-grid-two' }, ...[['maxVision', '每轮看图内容上限', 1, 30], ['maxImagesPerNote', '每条内容配图上限', 1, 18]].map(([id, label, min, max]) => h(Field, { key: id, label }, h('input', { type: 'number', value: draft[id], min, max, required: true, onChange: updateDraft(id) })))),
-              h(Hint, null, '看图每篇输出最多8,000 token，图片输入也可能收费。以上是调用上限，不是金额预算。正文模型可继续使用现有模型；看图模型必须支持图片。')),
+              h(Hint, null, '看图每条内容输出最多32,768 token，图片输入也可能收费。以上是调用上限，不是金额预算。正文模型可继续使用现有模型；看图模型必须支持图片。')),
             h(Box, { title: '判断规则' }, h(Hint, null, '按具体行为维护社区环境：人身侮辱、地图炮、普通创作区引战、牵连无关角色、威胁开盒、骚扰报复、造谣冒充。对不同立场使用相同标准，可以修改。'),
               h(Field, { label: '判断规则' }, h('textarea', { value: draft.rules, onChange: updateDraft('rules'), rows: 16, required: true, minLength: 20, maxLength: 12000 }))),
             h(Button, { type: 'submit', primary: true, disabled: busy || running }, '保存设置')),
           tab === 'topic' && h(Topic, { context: state.context, busy, running, act, openBuilder })),
-        h('footer', { className: 'patrol-footer' }, '实验性内容巡查结果 · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
+        h('footer', { className: 'patrol-footer' }, '鲸声守望 0.8.8（实验版） · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
   }
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout', 'sessions', 'remote', 'remote.agentPresets', 'uiWorkspace'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.8.5';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.8.8-desk8';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,
@@ -371,6 +381,6 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
         if (!result.ok) throw new Error(result.error.message || '无法打开配置制作助手');
         ctx.uiWorkspace.openSession(id);
       } }) }, Workbench));
-    ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 20, label: '鲸声守望' }, WhaleIcon));
+    ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL_ID, order: 20, label: '鲸声守望' }, WatchIcon));
   } };
 } });

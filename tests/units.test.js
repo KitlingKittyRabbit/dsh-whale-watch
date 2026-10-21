@@ -73,6 +73,33 @@ test('孤立评论和完整API快照不冒充完整旧讨论，不从相似标�
   const group = discussionUnits([p, { ...comment(0,1), id: 'c' }])[0];
   assert.equal(group.records[0].discussion.complete, false); assert.match(group.records[0].discussion.limitations.join(''), /部分评论记录缺失/);
 });
+test('无快照讨论按实际保存来源说明局限，手动或未知来源不冒充旧版浏览器采样', () => {
+  const url = `https://www.xiaohongshu.com/explore/${nid(0)}`;
+  for (const [noteSource, commentSource, label] of [
+    ['manual', 'manual', '手动导入样本'],
+    ['rendered-dom', 'rendered-dom', '旧版浏览器采样'],
+    [undefined, undefined, '已保存讨论样本'],
+    ['manual', 'rendered-dom', '已保存讨论样本'],
+    ['socialdatax', 'socialdatax', '已保存讨论样本'],
+  ]) {
+    const items = [
+      { id: 'n', kind: 'note', title: '导入正文', text: '正文', url, coverage: { source: noteSource } },
+      { id: 'c', kind: 'comment', text: '评论', url, coverage: { source: commentSource } },
+    ];
+    const original = structuredClone(items), groups = discussionUnits(items);
+    assert.equal(groups.length, 1, '相同原帖链接仍按原逻辑归并');
+    assert.deepEqual(groups[0].members.map(i => i.id), ['n', 'c']);
+    const discussion = groups[0].records[0].discussion;
+    assert.equal(discussion.complete, false);
+    assert.match(discussion.limitations.join(''), new RegExp(label));
+    if (label !== '旧版浏览器采样') assert.doesNotMatch(discussion.limitations.join(''), /浏览器/);
+    assert.deepEqual(items, original, '只修改派生说明，不改已保存来源或原记录');
+  }
+  const orphan = discussionUnits([{ id: 'c', kind: 'comment', text: '单独导入评论', url, coverage: { source: 'manual' } }])[0];
+  assert.match(orphan.records[0].discussion.limitations.join(''), /手动导入样本/);
+  assert.match(orphan.records[0].discussion.limitations.join(''), /未保存所属笔记正文/);
+  assert.equal(orphan.records[0].synthetic, true);
+});
 test('八分钱补充按辱亲谐音解释，明确不使用身价解释', () => {
   assert.match(CONTEXTUAL_BEHAVIOR_GUIDE, /“X爸坟前”的谐音/);
   assert.match(CONTEXTUAL_BEHAVIOR_GUIDE, /不是价格或“身价八分钱”/);

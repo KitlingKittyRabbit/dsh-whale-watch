@@ -72,6 +72,45 @@ export class Store {
     try { await this.save(); } catch (error) { this.data.seenCache = cache; throw error; }
     return next.ids.length;
   }
+  async clearAnalysisCache(targets) {
+    const data = this.data, selected = new Map(targets.map(row => [row.id, row.sourceHash]));
+    const entries = data.items.filter(item => item.analysis && selected.has(item.id)).map(item => ({
+      id: item.id, sourceHash: selected.get(item.id),
+      result: Object.fromEntries(['analysis', 'analysisKey', 'analysisError'].filter(key => Object.hasOwn(item, key)).map(key => [key, item[key]])),
+    }));
+    if (!entries.length) return { count: 0, unreadCount: 0 };
+    const ids = new Set(entries.map(row => row.id)), items = data.items, previous = data.analysisCacheTrash;
+    const hadPrevious = Object.hasOwn(data, 'analysisCacheTrash');
+    data.analysisCacheTrash = { clearedAt: new Date().toISOString(), entries };
+    data.items = items.map(item => ids.has(item.id) ? { ...item, analysis: null, analysisKey: null, analysisError: null } : item);
+    try { await this.save(); } catch (error) {
+      data.items = items;
+      if (hadPrevious) data.analysisCacheTrash = previous; else delete data.analysisCacheTrash;
+      throw error;
+    }
+    return { count: entries.length, unreadCount: items.filter(item => ids.has(item.id) && !item.readAt).length };
+  }
+  async restoreAnalysisCache(sourceHashes) {
+    const data = this.data, trash = data.analysisCacheTrash;
+    if (!trash?.entries?.length) throw new Error('没有可撤销的旧结论清理');
+    if (!Array.isArray(trash.entries) || trash.entries.some(row => !row?.id || typeof row.sourceHash !== 'string' || !row.result?.analysis)) {
+      throw new Error('旧结论备份格式不受支持，未覆盖现有结果');
+    }
+    const backup = new Map(trash.entries.map(row => [row.id, row])), items = data.items;
+    let count = 0;
+    data.items = items.map(item => {
+      const row = backup.get(item.id);
+      // Restore only untouched cleared slots. A new result, failure, changed
+      // discussion or newly captured record always wins over the backup.
+      if (!row || item.analysis !== null || item.analysisKey !== null || item.analysisError !== null || sourceHashes.get(item.id) !== row.sourceHash) return item;
+      const restored = { ...item };
+      for (const key of ['analysis', 'analysisKey', 'analysisError']) delete restored[key];
+      Object.assign(restored, row.result); count++; return restored;
+    });
+    data.analysisCacheTrash = null;
+    try { await this.save(); } catch (error) { data.items = items; data.analysisCacheTrash = trash; throw error; }
+    return { count, skipped: trash.entries.length - count };
+  }
   async clearCollection() {
     const data = this.data;
     const isCollectionJob = j => j.mode === 'scan' || j.mode === 'analyze' || j.mode?.startsWith('item:');

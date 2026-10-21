@@ -31,7 +31,12 @@ export function discussionUnits(items) {
     const missingSavedComments = snapshot && saved.sourceKeys.length !== members.length - 1;
     const complete = !!saved?.complete && !missingSavedComments;
     const limitations = [...(saved?.limitations || [])];
-    if (!saved && unit.noteId) limitations.push('旧版浏览器采样：仅保留当时采到的正文及评论，不是完整评论区；未保存的回复关系不能还原。');
+    if (!saved && unit.noteId) {
+      const sources = new Set(members.map(i => i.coverage?.source));
+      if (sources.size === 1 && sources.has('manual')) limitations.push('手动导入样本：仅包含已导入的正文及评论，无法证明完整评论区或回复关系；未提供的回复关系不能还原。');
+      else if (sources.size === 1 && sources.has('rendered-dom')) limitations.push('旧版浏览器采样：仅保留当时采到的正文及评论，不是完整评论区；未保存的回复关系不能还原。');
+      else limitations.push('已保存讨论样本：仅包含现有正文及评论，无法证明完整评论区或回复关系；未保存的回复关系不能还原。');
+    }
     if (!note && unit.noteId) limitations.push('未保存所属笔记正文；没有从评论中编造正文。');
     if (missingSavedComments) limitations.push('快照中的部分评论记录缺失。');
     const discussion = { ...saved, complete, commentsRead: members.filter(i => i.kind === 'comment').length,

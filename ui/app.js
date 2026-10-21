@@ -1,8 +1,10 @@
 const BASE = '/plugins/dafeiyu-patrol/api';
 const $ = id => document.getElementById(id);
 const requestedTab = new URLSearchParams(location.search).get('tab');
-let state, catalog, filter = 'all', offset = 0, total = 0, activeTab = ['results', 'topic', 'settings'].includes(requestedTab) ? requestedTab : 'results', lastResults = '', initialized = false;
+const initialTab = requestedTab === 'topic' ? 'context' : requestedTab;
+let state, catalog, filter = 'all', offset = 0, total = 0, activeTab = ['results', 'context', 'settings'].includes(initialTab) ? initialTab : 'results', lastResults = '', initialized = false;
 let topicEditing = null, materialHash = null, topicLoading = false;
+let actionBusy = false;
 const pageSize = 20;
 const names = { normal: '其它', review: '可疑', uncertain: '其它' };
 const statuses = { running: '正在巡查', completed: '任务完成', partial: '部分完成', paused: '等待你处理', failed: '任务未完成', cancelled: '已停止', interrupted: '上次任务中断' };
@@ -19,7 +21,11 @@ function tab(name) {
   activeTab = name;
   for (const t of ['results', 'settings', 'context']) $('tab-' + t).hidden = t !== name;
   document.querySelectorAll('[data-tab]').forEach(button => button.classList.toggle('active', button.dataset.tab === name));
-  $('page-title').textContent = { results: '巡查', settings: '设置', context: '专题' }[name];
+  $('page-title').textContent = { results: '鲸声守望', settings: '设置', context: '专题' }[name];
+  $('masthead').classList.toggle('masthead-scene', name === 'results');
+  $('masthead').classList.toggle('masthead-compact', name !== 'results');
+  $('page-description').textContent = { results: '', settings: '管理模型、判断规则与费用额度。', context: '管理背景、术语与讨论语境。' }[name];
+  $('page-description').hidden = name === 'results';
 }
 function fillModels() {
   const provider = $('provider').value;
@@ -47,8 +53,16 @@ function settingsForm() {
   if (s.model && !$('model').querySelector(`option[value="${CSS.escape(s.model)}"]`)) { const option = el('option', s.model); option.value = s.model; $('model').append(option); }
   $('model').value = s.model;
 }
+function analysisCacheControls() {
+  const cache = state?.analysisCache, disabled = actionBusy || !!state?.activeJob;
+  $('analysis-cache-count').textContent = cache ? `可清空旧结论：${cache.count} 条，其中未阅 ${cache.unreadCount} 条${cache.canRestore ? `；可撤销上次清空的 ${cache.backupCount} 条` : ''}` : '更新后重启 DSH 可启用此功能';
+  $('clear-analysis-cache').disabled = disabled || !cache?.count;
+  $('restore-analysis-cache').hidden = !cache?.canRestore;
+  $('restore-analysis-cache').disabled = disabled || !cache?.canRestore;
+}
 async function refresh() {
   state = await api('/status');
+  $('hero-topic').textContent = state.background?.activeId && state.background.enabled ? state.context?.active?.name || '自定义资料' : '未选择专题';
   for (const key of ['total', 'suspicious', 'other', 'pending']) {
     const category = key === 'total' ? 'unread' : key;
     $('count-' + key).textContent = `${state.counts[category]}篇`;
@@ -75,6 +89,7 @@ async function refresh() {
   $('job-spinner').hidden = !running; $('job-live-badge').hidden = !running; $('job-waiting').hidden = !running;
   $('clear-collection').disabled = running || !state.collection?.canClear;
   $('restore-collection').hidden = !state.collection?.canRestore; $('restore-collection').disabled = running;
+  analysisCacheControls();
   $('seen-cache-count').textContent = `已查缓存：${state.seenCache?.count || 0} 篇`;
   $('clear-seen-cache').disabled = running || !state.seenCache?.count;
   $('restore-seen-cache').hidden = !state.seenCache?.canRestore; $('restore-seen-cache').disabled = running;
@@ -164,10 +179,11 @@ function discussionCard(item) {
   node.append(read, retry); return node;
 }
 async function action(button, path, data = {}) {
-  button.disabled = true;
+  if (path.startsWith('/analysis-cache/') && (actionBusy || state?.activeJob || !state?.analysisCache || path.endsWith('/clear') && !state.analysisCache.count || path.endsWith('/restore') && !state.analysisCache.canRestore)) return;
+  actionBusy = true; button.disabled = true; analysisCacheControls();
   try { const result = await api(path, data); if (path === '/data-key') $('data-key').value = ''; notice(result.message || '操作完成'); await refresh(); }
   catch (error) { notice(error.message, true); }
-  finally { button.disabled = false; }
+  finally { actionBusy = false; button.disabled = false; analysisCacheControls(); }
 }
 $('data-key').addEventListener('input', () => { $('save-data-key').disabled = !!state?.activeJob || !$('data-key').value.trim(); });
 $('data-key-form').addEventListener('submit', async event => { event.preventDefault(); if (!state || state.activeJob || !$('data-key').value.trim()) return; await action($('save-data-key'), '/data-key', { apiKey: $('data-key').value }); $('save-data-key').disabled = !!state.activeJob || !$('data-key').value.trim(); });
@@ -179,6 +195,8 @@ $('start').addEventListener('click', () => { const urls = $('urls').value.split(
 for (const id of ['analyze', 'stop', 'resume']) $(id).addEventListener('click', () => action($(id), '/' + id));
 $('clear-seen-cache').addEventListener('click', () => action($('clear-seen-cache'), '/cache/clear'));
 $('restore-seen-cache').addEventListener('click', () => action($('restore-seen-cache'), '/cache/restore'));
+$('clear-analysis-cache').addEventListener('click', () => action($('clear-analysis-cache'), '/analysis-cache/clear'));
+$('restore-analysis-cache').addEventListener('click', () => action($('restore-analysis-cache'), '/analysis-cache/restore'));
 $('provider').addEventListener('change', fillModels);
 $('settings-form').addEventListener('submit', async event => {
   event.preventDefault();

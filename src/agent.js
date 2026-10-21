@@ -124,6 +124,8 @@ export function apply(ctx) {
   }, async args => engine.markRead(args));
   tool('patrol_clear_cache', '仅在用户明确要求清理已查缓存时调用。允许旧帖再次采集，保留原文、模型结果和复核，可撤销；任务运行中不可清理。', {}, async () => engine.clearSeenCache());
   tool('patrol_restore_cache', '用户要求撤销上次已查缓存清理时调用，恢复排除历史。', {}, async () => engine.restoreSeenCache());
+  tool('patrol_clear_analysis_cache', '只有用户明确要求清空旧结论缓存时调用。仅清除当前讨论中标为旧结论的模型结果，保留有效新结论、原文、配图及识图缓存、已阅状态；可撤销。此操作不调用模型，之后分析未阅才会处理清理后的未阅条目。要求添加按钮或询问用法不等于授权立即清理。', {}, async () => engine.clearAnalysisCache());
+  tool('patrol_restore_analysis_cache', '用户明确要求撤销旧结论清理时调用。恢复最后一次清理的结果，但不覆盖新分析、新失败或材料已变化的条目。', {}, async () => engine.restoreAnalysisCache());
   tool('patrol_clear_collection', '只有用户明确要求清空采集记录时调用。清空正文、评论、分析、已阅记录、对应任务和已查缓存；模型、规则、背景及密钥保留。可撤销最近一次清空；询问怎么清空不等于要求立即清空。', {}, async () => engine.clearCollection());
   tool('patrol_restore_collection', '用户要求撤销清空采集记录时调用，恢复旧记录，并保留清空后新采集的内容。', {}, async () => engine.restoreCollection());
   tool('patrol_stop', '停止正在进行的巡查，保留已经保存的结果。', {}, async () => engine.stop());

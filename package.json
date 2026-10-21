@@ -1,6 +1,6 @@
 {
   "name": "dsh-dafeiyu-patrol",
-  "version": "0.8.5",
+  "version": "0.8.8",
   "description": "鲸声守望：辅助发现不合理讨论，共同维护讨论与创作环境",
   "type": "module",
   "main": "src/index.js",
@@ -21,13 +21,16 @@
     "cordis.patch.yml",
     "README.md",
     "locale",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    "scripts/build-art.js"
   ],
   "scripts": {
     "test": "node --test tests/*.test.js",
     "dev": "node scripts/dev.js",
     "pack:plugin": "node scripts/pack.js",
-    "dev:patch": "node scripts/dev-patch.js"
+    "dev:patch": "node scripts/dev-patch.js",
+    "art:build": "node scripts/build-art.js",
+    "prepack": "npm run art:build"
   },
   "engines": {
     "node": ">=22",

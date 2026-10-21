@@ -91,6 +91,37 @@ test('先读取所属配图再分析评论，重跑复用配图，规则变化�
   await engine.retry({ id: stored.id }); await engine.active.promise;
   assert.equal(calls, 1); assert.equal(engine.store.data.jobs.at(-1).visionCached, 1); assert.equal(observed.length, 2);
 });
+test('明确重算整篇时仅重读不完整识图缓存，普通续跑与完整缓存不增加看图费用', async t => {
+  for (const pages of [[], [{ ...note.vision.pages[0], uncertain: true }]]) {
+    const reads = [];
+    const engine = await fixture(t, {
+      visionKey: () => 'same-images', cacheKey: () => 'analysis-key',
+      readImages: async item => { reads.push(item.id); return structuredClone(note.vision); },
+    });
+    const stored = await engine.store.upsert({ ...note, vision: null });
+    stored.vision = { key: 'same-images', pages, complete: false };
+    const comment = await engine.store.upsert({ ...note, kind: 'comment', sourceKey: `comment:${noteId}:c1`, text: '评论原文', vision: null });
+    comment.vision = { ...structuredClone(note.vision), key: 'same-images' };
+    await engine.settings({ ...engine.store.data.settings, maxVision: 1 });
+
+    await engine.start({}, 'analyze'); await engine.active.promise;
+    assert.deepEqual(reads, [], '普通续跑保留已有识图结果，不新增收费调用');
+    assert.equal(stored.vision.complete, false);
+    assert.equal(engine.store.data.jobs.at(-1).visionCached, 2);
+
+    await engine.retry({ id: stored.id }); await engine.active.promise;
+    assert.deepEqual(reads, [stored.id], '缺页或模糊识图在显式整篇重算时重读，完整评论配图继续复用');
+    assert.equal(stored.vision.complete, true);
+    assert.equal(comment.vision.complete, true);
+    assert.equal(engine.store.data.jobs.at(-1).visionRead, 1);
+    assert.equal(engine.store.data.jobs.at(-1).visionCached, 1);
+    assert.equal(engine.store.data.jobs.at(-1).imagesMissing, 0);
+
+    await engine.retry({ id: stored.id }); await engine.active.promise;
+    assert.deepEqual(reads, [stored.id], '恢复完整后重复重算也不再重复看图');
+    assert.equal(engine.store.data.jobs.at(-1).visionCached, 2);
+  }
+});
 test('看图失败也占用额度，剩余笔记标记缺图；仅采集不调用看图', async t => {
   let calls = 0;
   const engine = await fixture(t, { visionKey: () => 'key', readImages: async () => { calls++; throw new Error('不支持图片'); }, cacheKey: item => item.contentHash, analyze: async () => normal });

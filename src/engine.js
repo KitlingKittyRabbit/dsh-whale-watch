@@ -43,9 +43,29 @@ export class PatrolEngine {
       inspectionResult, analysisStale: entries.some(i => i.analysisStale), discussionSummary: summary };
   }
   unitViews() { return discussionUnits(this.store.data.items).map(unit => this.unitView(unit)); }
+  assertAnalysisCacheIdle() {
+    if (this.analysisCacheMutation) throw new Error('正在更新旧结论缓存，请稍后再试');
+    if (this.recordsMutation) throw new Error('正在更新记录，请稍后再试');
+  }
+  async mutateRecords(action) {
+    this.assertAnalysisCacheIdle();
+    this.recordsMutation = true;
+    try { return await action(); } finally { this.recordsMutation = false; }
+  }
+  analysisSourceHashes() {
+    const hashes = new Map();
+    for (const unit of discussionUnits(this.store.data.items)) {
+      // The saved judgment depends on the entire discussion, including image
+      // readings and parent context, not just the target's own text.
+      const sourceHash = hash(JSON.stringify([discussionHash(unit.records), unit.records.map(item => [item.kind, item.title, item.context, item.images, item.backgroundExpanded])]));
+      for (const item of unit.members) hashes.set(item.id, sourceHash);
+    }
+    return hashes;
+  }
   state() {
     const data = this.store.data, units = this.unitViews(), unread = units.filter(i => !i.readAt);
     const entries = unread.flatMap(i => i.entries.filter(e => !e.readAt));
+    const oldResults = units.flatMap(unit => unit.entries).filter(item => item.analysis && (item.analysisStale || item.analysisError));
     const suspicious = unread.filter(i => i.inspectionResult === 'suspicious').length;
     return { settings: data.settings, searchOptions: SEARCH_OPTIONS, policy: { version: 'community-environment-v8', contextGuide: this.store.data.context?.active?.config.interpretationNotes.join('\n') || '' }, context: contextView(data), dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: units.length, unread: unread.length, read: units.length - unread.length, review: suspicious, suspicious,
@@ -61,6 +81,7 @@ export class PatrolEngine {
       discussions: units.filter(i => i.kind === 'discussion').length, standalone: units.filter(i => i.discussionSummary.standalone).length,
       unit: 'discussion',
     }, seenCache: { count: data.seenCache.ids.length, lastClearedAt: data.seenCache.clearedAt, canRestore: !!data.seenCache.previousIds?.length },
+    analysisCache: { count: oldResults.length, unreadCount: oldResults.filter(item => !item.readAt).length, canRestore: !!data.analysisCacheTrash?.entries?.length, backupCount: data.analysisCacheTrash?.entries?.length || 0, lastClearedAt: data.analysisCacheTrash?.clearedAt || null },
     collection: { canClear: !!data.items.length || !!data.seenCache.ids.length || data.jobs.some(j => j.mode === 'scan' || j.mode === 'analyze' || j.mode?.startsWith('item:')), canRestore: !!data.collectionTrash, backupRecords: data.collectionTrash?.items?.length || 0, clearedAt: data.collectionTrash?.clearedAt || null },
     background: { enabled: data.background.enabled, activeId: data.background.active?.id || null, articlesRead: data.background.active?.readings.length || 0 }, browserOpen: false, browserEnabled: false, activeJob: this.active?.job.id || null };
   }
@@ -85,14 +106,41 @@ export class PatrolEngine {
     return { count, message: `已撤销清理，已查缓存现有 ${count} 篇笔记。` };
   }
   async clearCollection() {
-    if (this.active) throw new Error('任务进行中，请先停止任务再清空采集记录');
-    const cleared = await this.store.clearCollection();
-    return { cleared: cleared.count, message: cleared.changed ? `已清空${cleared.count}条采集记录、对应巡查任务及已查缓存。模型、规则、背景和密钥保留，可撤销本次清空。` : '采集记录已经为空。' };
+    return this.mutateRecords(async () => {
+      if (this.active) throw new Error('任务进行中，请先停止任务再清空采集记录');
+      const cleared = await this.store.clearCollection();
+      return { cleared: cleared.count, message: cleared.changed ? `已清空${cleared.count}条采集记录、对应巡查任务及已查缓存。模型、规则、背景和密钥保留，可撤销本次清空。` : '采集记录已经为空。' };
+    });
   }
   async restoreCollection() {
-    if (this.active) throw new Error('任务进行中，请先停止任务再撤销采集记录清空');
-    const restored = await this.store.restoreCollection();
-    return { restored, message: `已撤销采集记录清空，恢复${restored}条原记录；清空后新采集的内容保留。` };
+    return this.mutateRecords(async () => {
+      if (this.active) throw new Error('任务进行中，请先停止任务再撤销采集记录清空');
+      const restored = await this.store.restoreCollection();
+      return { restored, message: `已撤销采集记录清空，恢复${restored}条原记录；清空后新采集的内容保留。` };
+    });
+  }
+  async clearAnalysisCache() {
+    this.assertAnalysisCacheIdle();
+    if (this.active) throw new Error('任务进行中，请先停止任务再清空旧结论缓存');
+    this.analysisCacheMutation = true;
+    try {
+      const hashes = this.analysisSourceHashes();
+      const targets = this.unitViews().flatMap(unit => unit.entries).filter(item => item.analysis && (item.analysisStale || item.analysisError))
+        .map(item => ({ id: item.id, sourceHash: hashes.get(item.id) }));
+      const result = await this.store.clearAnalysisCache(targets);
+      return { cleared: result.count, unread: result.unreadCount, message: result.count
+        ? `已清空 ${result.count} 条旧结论，其中 ${result.unreadCount} 条未阅内容回到待分析。原文、配图、识图缓存和已阅状态保留；可撤销。需要重新分析时点击“分析未阅篇目”，模型费用另计。`
+        : '没有可清空的旧结论；已有撤销备份保留。' };
+    } finally { this.analysisCacheMutation = false; }
+  }
+  async restoreAnalysisCache() {
+    this.assertAnalysisCacheIdle();
+    if (this.active) throw new Error('任务进行中，请先停止任务再撤销旧结论清理');
+    this.analysisCacheMutation = true;
+    try {
+      const result = await this.store.restoreAnalysisCache(this.analysisSourceHashes());
+      return { restored: result.count, skipped: result.skipped, message: `已恢复 ${result.count} 条旧结论。${result.skipped ? `另有 ${result.skipped} 条材料或分析状态已变化，保留现有内容。` : ''}` };
+    } finally { this.analysisCacheMutation = false; }
   }
   async settings(input) {
     if (this.active) throw new Error('任务进行中，请先停止任务再修改设置');
@@ -125,22 +173,28 @@ export class PatrolEngine {
     return this.start({ maxAnalysis: 1, discussionNoteLimit: 1, ...(unit?.standalone ? { maxVision: 1 } : {}), backgroundExpanded }, `item:${id}`);
   }
   async markRead(input) {
-    const data = readSchema.parse(input);
-    const item = this.store.data.items.find(i => i.id === data.id);
-    if (!item) throw new Error('没有找到这条记录');
-    const unit = findUnit(item, this.store.data.items), members = unit?.members || [item];
-    const previous = members.map(i => i.readAt), now = new Date().toISOString();
-    for (const member of members) member.readAt = data.read ? member.readAt || now : null;
-    try { await this.store.save(); } catch (error) { members.forEach((i, n) => { i.readAt = previous[n]; }); throw error; }
-    return { id: item.id, readAt: item.readAt, message: data.read ? '整篇已阅，正文及已保存评论已从当前列表移除。可在“已阅”中查看。' : '整篇已恢复到未阅列表。' };
+    return this.mutateRecords(async () => {
+      const data = readSchema.parse(input);
+      const item = this.store.data.items.find(i => i.id === data.id);
+      if (!item) throw new Error('没有找到这条记录');
+      const unit = findUnit(item, this.store.data.items), members = unit?.members || [item];
+      const previous = members.map(i => i.readAt), now = new Date().toISOString();
+      for (const member of members) member.readAt = data.read ? member.readAt || now : null;
+      try { await this.store.save(); } catch (error) { members.forEach((i, n) => { i.readAt = previous[n]; }); throw error; }
+      return { id: item.id, readAt: item.readAt, message: data.read ? '整篇已阅，正文及已保存评论已从当前列表移除。可在“已阅”中查看。' : '整篇已恢复到未阅列表。' };
+    });
   }
 
   async review(input) {
-    const data = reviewSchema.parse(input);
-    const item = this.store.data.items.find(i => i.id === data.id);
-    if (!item) throw new Error('没有找到这条记录');
-    item.review = { verdict: data.verdict, note: data.note, at: new Date().toISOString() };
-    await this.store.save(); return item;
+    return this.mutateRecords(async () => {
+      const data = reviewSchema.parse(input);
+      const item = this.store.data.items.find(i => i.id === data.id);
+      if (!item) throw new Error('没有找到这条记录');
+      const previous = item.review;
+      item.review = { verdict: data.verdict, note: data.note, at: new Date().toISOString() };
+      try { await this.store.save(); } catch (error) { item.review = previous; throw error; }
+      return item;
+    });
   }
   options(input) {
     const requested = startSchema.parse(input);
@@ -149,6 +203,7 @@ export class PatrolEngine {
     return { ...settings, ...requested, urls, keywords: urls.length && !requested.keywords ? [] : requested.keywords || settings.keywords, analyze: requested.analyze ?? true };
   }
   async start(input = {}, mode = 'scan', backgroundPlan = null, resumeOnlyPending = false, remainingTargetIds) {
+    this.assertAnalysisCacheIdle();
     if (this.active) throw new Error('已有任务运行中，请先停止或等待完成');
     const options = this.analysisSettings(this.options(input));
     const needsCollection = mode === 'scan' || mode === 'background' && (backgroundPlan?.source !== 'existing' || backgroundPlan?.refreshSources && backgroundPlan?.urls?.length);
@@ -182,12 +237,14 @@ export class PatrolEngine {
     let discussionsUsed = 0;
     const discussionCap = options.discussionNoteLimit || 5;
     const preparedNotes = new Set();
-    const prepareImages = async item => {
+    const prepareImages = async (item, retryIncomplete = false) => {
       if (!item.coverage?.imageCount || preparedNotes.has(item.id)) return;
       preparedNotes.add(item.id);
       if (!options.analyze || !options.readImages) return;
       const key = this.model.visionKey?.(item, options);
-      if (key && item.vision?.key === key && !item.vision.error) { job.visionCached++; }
+      // Explicit whole-discussion retries may recover incomplete OCR. Keep
+      // complete readings cached, and never add image calls to ordinary runs.
+      if (key && item.vision?.key === key && !item.vision.error && (!retryIncomplete || item.vision.complete)) { job.visionCached++; }
       else if (visionUsed < options.maxVision) {
         visionUsed++; progress(`读取第 ${visionUsed} 篇配图／上限 ${options.maxVision}`);
         try { item.vision = { ...await this.model.readImages(item, options, signal), key }; job.visionRead++; }
@@ -260,7 +317,7 @@ export class PatrolEngine {
           const recovered = await this.apiCollector.retrySavedImages(record, signal);
           if (recovered) { progress(`重新下载已保存链接中的配图 ${recovered} 张；未重新查询数据 API`); await this.store.save(); }
         }
-        await prepareImages(record);
+        await prepareImages(record, force);
       }
       const note = unit.note;
       for (const comment of unit.comments) comment.coverage = { ...comment.coverage,
@@ -542,10 +599,11 @@ export class PatrolEngine {
     return { ...result, message: mode === 'analyze' || mode.startsWith('item:') ? '已继续上次任务尚未完成和失败的内容，本次任务已完成的结果不会重复重算；仍遵守原范围和每轮上限。' : mode === 'scan' ? '已按原范围继续采集；已查笔记去重，已有成功结论不会重算。' : '任务已继续，已保存的结果保留。' };
   }
   async import(input) {
+    this.assertAnalysisCacheIdle();
     if (this.active) throw new Error('请等当前任务结束后再导入');
     const data = importSchema.parse(input);
     if (data.url) data.url = validateNoteUrl(data.url);
-    const item = await this.store.upsert({ ...data, author: '', coverage: { source: 'manual', imagesUnread: false, textTruncated: false, parentMissing: false } });
+    const item = await this.mutateRecords(() => this.store.upsert({ ...data, author: '', coverage: { source: 'manual', imagesUnread: false, textTruncated: false, parentMissing: false } }));
     if (data.analyze) await this.start({ maxAnalysis: 1 }, `item:${item.id}`);
     return { id: item.id, message: data.analyze ? '已导入，正在分析' : '已导入' };
   }

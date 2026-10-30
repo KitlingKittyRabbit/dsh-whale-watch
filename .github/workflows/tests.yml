@@ -3,6 +3,14 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dsh: 0.2.0-rc.2
+            cordis: 4.0.4
+          - dsh: 0.2.1-rc.5
+            cordis: 4.0.5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -10,6 +18,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Use the tested DSH runtime libraries
+        run: npm install --no-save --ignore-scripts --package-lock=false @deepseek-ai/cordis@${{ matrix.cordis }} @deepseek-ai/dsh-tools@${{ matrix.dsh }} @deepseek-ai/dsh-llm@${{ matrix.dsh }}
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium
       - run: npm test
       - run: npm pack --dry-run

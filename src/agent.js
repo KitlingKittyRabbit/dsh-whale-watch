@@ -1,6 +1,7 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { readFile, stat } from 'node:fs/promises';
 import { SEARCH_OPTIONS } from './search-options.js';
+import { USER_KEYWORD_MODES } from './user-search.js';
 
 const searchParameters = Object.fromEntries(Object.entries(SEARCH_OPTIONS).map(([key, option]) => [key, {
   type: 'string', enum: option.choices.map(([value]) => value),
@@ -12,6 +13,10 @@ const limits = {
   readImages: { type: 'boolean', description: '是否调用看图模型读取已保存配图' },
   maxVision: { type: 'integer', description: '每轮看图内容上限，1到30，带图评论也占名额' },
   maxImagesPerNote: { type: 'integer', description: '每篇配图上限，1到18' },
+};
+const userParameters = {
+  users: { type: 'array', items: { type: 'string' }, description: '最多5个小红书完整主页链接或24位用户ID，不接受昵称或小红书号；空数组不限定用户' },
+  userKeywordMode: { type: 'string', enum: USER_KEYWORD_MODES.map(([value]) => value), description: 'and=指定用户发布的笔记标题或正文包含任一关键词；or=用户笔记与全站关键词搜索结果合并去重。仅一组条件时单独使用该组。筛选也可能产生数据费' },
 };
 async function configInput(args) {
   if (!!args.configJson === !!args.filePath) throw new Error('请提供 configJson 或 filePath 中的一项');
@@ -29,11 +34,11 @@ export function apply(ctx) {
   const engine = ctx.dafeiyuPatrol;
   const render = (_args, value) => [{ type: 'text', text: JSON.stringify(value) }];
   const tool = (name, description, parameters, execute, renderer = render) => ctx.effect(() => ctx.tools.register(defineTool({ name, description, parameters, output: { schema: { type: 'json' }, render: renderer }, execute })), `patrol tool ${name}`);
-  tool('patrol_start', '发起关键词搜索或指定笔记采集，立即返回任务编号。SocialDataX方式分页读取整篇正文、配图、评论和回复，受本轮数据费用上限限制，再结合完整已保存讨论分析。仅支持数据API采集，浏览器自动浏览已停用。按笔记及已保存评论区计篇，旧浏览器样本不当成完整评论区。不得自动提高费用或回退浏览器。', {
-    ...searchParameters, ...limits,
+  tool('patrol_start', '发起关键词、指定用户或指定笔记采集，立即返回任务编号。users与keywords可按and/or组合；两项都省略才沿用默认范围，只传users不会追加默认关键词。用户列表按接口顺序读取，笔记排序仅作用于关键词搜索；用户与关键词合并时交替取候选，不作全局热度排名。SocialDataX分页读取正文、配图、评论和回复，受数据费用限制，再分析已保存讨论。不得提高预算或回退浏览器。', {
+    ...searchParameters, ...userParameters, ...limits,
     collectionSource: { type: 'string', enum: ['socialdatax'], description: '使用面板配置；只有用户明确要求才更改' },
     apiBudgetYuan: { type: 'number', description: '本轮数据费用上限（元），默认使用配置；仅用户明确要求才提高' },
-    keywords: { type: 'array', items: { type: 'string' }, description: '搜索词，不传时使用面板配置' },
+    keywords: { type: 'array', items: { type: 'string' }, description: '最多5个关键词，多个词任一命中；只传users时默认不限制关键词，两者都省略才使用默认范围' },
     urls: { type: 'array', items: { type: 'string' }, description: '小红书笔记链接；提供时默认只采集这些链接' },
     excludeSeen: { type: 'boolean', description: '默认true，跳过历史成功采集的笔记；false可更新正文和新评论' },
     analyze: { type: 'boolean', description: 'false只采集、不调用模型；默认true' },
@@ -57,8 +62,8 @@ export function apply(ctx) {
   }, async args => engine.import(args));
   tool('patrol_models', '读取宿主可用模型及图片能力，用于设置分析模型和看图模型；不调用模型推理。', {}, async () => engine.model.catalog());
   tool('patrol_settings', '只修改用户明确指定的默认设置；未提供的字段保留。模型服务及型号必须成对传入，均为空表示跟随默认。规则修改不重算旧结论，不自行提高预算。密钥不能通过本工具传入。', {
-    ...searchParameters, ...limits,
-    keywords: { type: 'array', items: { type: 'string' }, description: '1到5个默认搜索词' },
+    ...searchParameters, ...userParameters, ...limits,
+    keywords: { type: 'array', items: { type: 'string' }, description: '0到5个默认搜索词；只按用户读取时设为空数组' },
     apiBudgetYuan: { type: 'number', description: '数据额度0.1到100元，仅按用户要求更改' },
     provider: { type: 'string', description: 'patrol_models中的服务id' }, model: { type: 'string', description: '对应模型id' },
     visionProvider: { type: 'string', description: '看图服务id' }, visionModel: { type: 'string', description: '看图模型id' },

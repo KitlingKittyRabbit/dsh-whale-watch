@@ -4,10 +4,11 @@ import { z } from 'zod';
 import { validateNoteUrl } from './schema.js';
 import { captureImages } from './images.js';
 import { DEFAULT_SEARCH_SETTINGS } from './search-options.js';
+import { alternate, matchesKeywords, matchesUserFilters, userReference } from './user-search.js';
 
 const BASE = 'https://mcp.socialdatax.com/socialdatax/api/v1/xhs';
 const id = z.string().regex(/^[a-f0-9]{24}$/i);
-const author = z.object({ name: z.string().max(500) }).passthrough().nullable();
+const author = z.object({ name: z.string().max(500), user_id: id.optional() }).passthrough().nullable();
 const points = z.object({ cost: z.number().int().nonnegative() });
 const image = z.object({ image_url: z.string().max(4000) }).passthrough();
 const comment = z.object({ comment_id: z.string().min(1).max(128), note_id: id, content: z.string().max(100000),
@@ -17,6 +18,10 @@ const page = z.object({ items: z.array(comment).max(100), next_page_token: z.str
 const detail = z.object({ note_id: id, note_url: z.string().nullable(), title: z.string().max(1000), content: z.string().max(200000),
   note_type: z.string(), image_items: z.array(image).max(100), comment_count: z.number().int().nonnegative(), author, points }).passthrough();
 const search = z.object({ items: z.array(z.object({ note_id: id, note_url: z.string().nullable() }).passthrough()).max(100),
+  next_page_token: z.string().max(30000), points });
+const userInfo = z.object({ user_id: id, points }).passthrough();
+const userNotes = z.object({ items: z.array(z.object({ note_id: id, note_url: z.string().nullable(), note_type: z.enum(['image', 'video']),
+  publish_time: z.number().int().nonnegative(), author: z.object({ user_id: id }).passthrough() }).passthrough()).max(100),
   next_page_token: z.string().max(30000), points });
 const LIMIT = 2000;
 const noteId = url => /\/(?:explore|discovery\/item|search_result)\/([a-f0-9]{24})/i.exec(url)?.[1]?.toLowerCase();
@@ -76,34 +81,89 @@ export class SocialDataX {
     return parsed;
   }
   async *collect(options, signal, progress) {
-    options = { ...DEFAULT_SEARCH_SETTINGS, ...options };
+    options = { ...DEFAULT_SEARCH_SETTINGS, users: [], userKeywordMode: 'and', ...options };
+    const referenceMap = new Map();
+    for (const value of options.users) {
+      const ref = userReference(value), identity = ref.userId || new URL(ref.params.profile_url).pathname;
+      if (!referenceMap.has(identity)) referenceMap.set(identity, ref);
+    }
+    const references = [...referenceMap.values()];
+    if (references.length && options.urls.length) throw new Error('指定笔记链接与指定用户不能同时使用');
     if (!this.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key；不会自动改用浏览器采集');
     const session = { attempts: 0, costCents: 0, unknown: 0, budget: options.apiBudgetYuan, maxRequests: Math.floor(options.apiBudgetYuan * 10 + 1e-8) };
-    const excluded = new Set(options.excludedNoteIds || []), reported = new Set(), candidates = [], queued = new Set();
-    const add = entry => {
-      const key = entry.note_id || noteId(entry.note_url);
-      if (key && excluded.has(key)) { if (!reported.has(key)) { reported.add(key); progress({ type: 'excluded', count: 1, message: '已排除查过的笔记' }); } return; }
+    const excluded = new Set(options.excludedNoteIds || []), reported = new Set(), queued = new Set(), resolvedUsers = new Set(), readNotes = new Set();
+    const explicitNotes = new Set(options.urls.map(url => noteId(url) || url));
+    const accept = entry => {
+      const key = entry.note_id?.toLowerCase() || noteId(entry.note_url);
+      if (key && excluded.has(key)) { if (!reported.has(key)) { reported.add(key); progress({ type: 'excluded', count: 1, message: '已排除查过的笔记' }); } return false; }
       const identity = key || entry.note_url;
-      if (!queued.has(identity)) { candidates.push(entry); queued.add(identity); }
+      if (queued.has(identity)) return false;
+      queued.add(identity); return true;
     };
-    for (const url of options.urls) add({ note_url: validateNoteUrl(url) });
-    for (const keyword of options.keywords) {
-      if (candidates.length >= options.maxNotes) break;
+    const filtered = message => progress({ type: 'filtered', count: 1, message });
+    const pages = async function* (source, path, params, schema) {
       let token = ''; const tokens = new Set();
-      for (let n = 0; n < 5 && candidates.length < options.maxNotes; n++) {
-        const found = await this.request('/note/search', { keyword, sort_type: options.noteSort, publish_time_range: options.publishTimeRange, note_type: options.noteType, page_token: token }, search, session, signal, progress);
-        for (const row of found.items) add(row);
-        token = found.next_page_token; if (!token || tokens.has(token)) break; tokens.add(token);
+      for (let n = 0; n < 5; n++) {
+        const found = await source.request(path, { ...params, page_token: token }, schema, session, signal, progress);
+        for (const row of found.items) yield row;
+        token = found.next_page_token;
+        if (!token) return;
+        if (tokens.has(token)) { progress({ type: 'search-limit', message: '候选笔记分页令牌重复，搜索范围未读完' }); return; }
+        tokens.add(token);
       }
-    }
-    const selected = candidates.slice(0, options.maxNotes);
-    for (const [index, entry] of selected.entries()) {
+      progress({ type: 'search-limit', message: '达到每个用户或关键词最多5页的候选查找上限，搜索范围未读完' });
+    };
+    const userCandidates = async function* (source, reference) {
+      const userId = (reference.userId || (await source.request('/user/info', reference.params, userInfo, session, signal, progress)).user_id).toLowerCase();
+      if (resolvedUsers.has(userId)) return;
+      resolvedUsers.add(userId);
+      // Keep full supplied profile URLs. Encrypted profile identities are resolved once first.
+      const params = reference.userId ? reference.params : { user_id: userId };
+      for await (const row of pages(source, '/user/note/list', params, userNotes)) {
+        if (row.author.user_id.toLowerCase() !== userId) throw new Error('用户笔记列表的作者与指定用户不符，结果未采纳');
+        yield { ...row, expectedUserId: userId };
+      }
+    };
+    const keywordCandidates = async function* (source) {
+      for (const keyword of options.keywords) yield* pages(source, '/note/search', { keyword, sort_type: options.noteSort,
+        publish_time_range: options.publishTimeRange, note_type: options.noteType }, search);
+    };
+    const source = this;
+    const eligible = async function* (entries) {
+      for await (const entry of entries) {
+        if (!accept(entry)) continue;
+        if (entry.expectedUserId && !matchesUserFilters(entry, options)) { filtered('指定用户的候选笔记不符合时间或类型条件，已筛除'); continue; }
+        yield entry;
+      }
+    };
+    const candidates = async function* () {
+      for (const url of options.urls) { const entry = { note_url: validateNoteUrl(url) }; if (accept(entry)) yield entry; }
+      if (references.length) {
+        const users = alternate(references.map(ref => eligible(userCandidates(source, ref))));
+        if (options.keywords.length && options.userKeywordMode === 'or') yield* alternate([users, eligible(keywordCandidates(source))]);
+        else yield* users;
+      } else yield* eligible(keywordCandidates(source));
+    };
+    let collected = 0;
+    try {
+    for await (const entry of candidates()) {
+      if (session.attempts >= session.maxRequests) {
+        const remaining = !references.length && !options.keywords.length ? Math.max(1, Math.min(options.maxNotes - collected, explicitNotes.size - collected - reported.size)) : null;
+        throw new ApiLimit(`本轮数据费用上限已到，${remaining ? `另有${remaining}篇候选笔记未读取` : '候选笔记尚未全部检查'}`);
+      }
       signal.throwIfAborted(); progress({ type: 'attempt', message: '正在读取整篇笔记和评论区' });
       const data = await this.request('/note/detail', entry.note_id ? { note_id: entry.note_id } : { note_url: entry.note_url }, detail, session, signal, progress);
       const key = data.note_id.toLowerCase();
       const expectedId = entry.note_id || noteId(entry.note_url || '');
       if (expectedId && expectedId.toLowerCase() !== key) throw new Error('数据服务返回的正文不属于请求的笔记，结果未采纳');
       if (excluded.has(key)) { progress({ type: 'excluded', count: 1, message: '分享链接解析后发现是已查笔记，已跳过' }); continue; }
+      if (readNotes.has(key)) continue;
+      readNotes.add(key);
+      if (entry.expectedUserId && data.author?.user_id?.toLowerCase() !== entry.expectedUserId) throw new Error('笔记正文的作者与指定用户不符，结果未采纳');
+      if (entry.expectedUserId && !matchesUserFilters({ ...entry, ...data }, options)) { filtered('指定用户的笔记详情不符合时间或类型条件，已筛除'); continue; }
+      if (entry.expectedUserId && options.userKeywordMode === 'and' && options.keywords.length && !matchesKeywords(data, options.keywords)) {
+        filtered('指定用户的笔记标题和正文未命中任一关键词，已筛除；未读取评论或调用模型'); continue;
+      }
       // Preserve returned full URLs. A null URL is not silently replaced with a fabricated public link.
       const url = data.note_url ? validateNoteUrl(data.note_url) : entry.note_url || '';
       const rows = new Map(), limits = []; let topComplete = false, repliesComplete = false;
@@ -150,23 +210,29 @@ export class SocialDataX {
         const ownSources = row.image_items.map((v, i) => ({ index: i + 1, url: v.image_url }));
         const ownImages = await saveImages(ownSources);
         comments.push({ kind: 'comment', sourceKey: `comment:${key}:${row.comment_id}`, discussionNoteId: key, commentId: row.comment_id,
-          parentCommentId: row.parent_comment_id, threadRootId: row.threadRootId, text, title: data.title, author: row.author?.name || '', url,
+          parentCommentId: row.parent_comment_id, threadRootId: row.threadRootId, text, title: data.title, author: row.author?.name || '', authorId: row.author?.user_id || '', url,
           context: `所属笔记：${data.title}\n${data.content.slice(0, 15000)}` + (parent ? `\n\n上级评论（${parent.author?.name || '作者未读取'}）：${parent.content.slice(0, 15000)}` : ''),
           images: ownImages, coverage: { source: 'socialdatax', imageCount: ownSources.length, imagesUnread: ownSources.length > 0,
             textTruncated: row.content.length > text.length, contextTextTruncated: data.content.length > 15000 || !!parent && parent.content.length > 15000,
             parentMissing: !!row.parent_comment_id && !parent, unsupportedMedia: row.content_type === 'voice', discussionIncomplete: !complete } });
       }
-      const note = { kind: 'note', sourceKey: `note:${key}`, discussionNoteId: key, text: data.content.slice(0, 15000), title: data.title, author: data.author?.name || '', url, context: '', images,
+      const note = { kind: 'note', sourceKey: `note:${key}`, discussionNoteId: key, text: data.content.slice(0, 15000), title: data.title, author: data.author?.name || '', authorId: data.author?.user_id || '', url, context: '', images,
         discussion: { sourceKeys: comments.map(c => c.sourceKey), complete, limitations: limits, reportedComments: totalReported, commentsRead: rows.size, commentPages, replyPages, fetchedAt: new Date().toISOString() },
         coverage: { source: 'socialdatax', imageCount: sources.length, imagesUnread: sources.length > 0, textTruncated: data.content.length > 15000,
           discussionIncomplete: !complete, unsupportedMedia: data.note_type === 'video' } };
       if (signal.aborted) { complete = false; note.discussion.complete = false; note.coverage.discussionIncomplete = true; for (const comment of comments) comment.coverage.discussionIncomplete = true; }
       yield { note, comments };
+      collected++;
       if (signal.aborted) signal.throwIfAborted();
-      if (session.attempts >= session.maxRequests || limits.some(v => /数据服务|响应|所属笔记/.test(v))) {
-        if (index < selected.length - 1) progress({ type: 'api-stop', message: `已停止后续数据读取，另有${selected.length - index - 1}篇未读取；本轮请求上限或服务异常限制` });
+      if (collected >= options.maxNotes) return;
+      if (limits.some(v => /数据服务|响应|所属笔记/.test(v))) {
+        progress({ type: 'api-stop', message: '已停止后续数据读取：评论服务异常，尚未继续检查其他候选笔记' });
         return;
       }
+    }
+    } catch (error) {
+      if (!(error instanceof ApiLimit)) throw error;
+      progress({ type: 'api-stop', message: error.message + '；已保存的笔记保留，未宣称覆盖全部结果' });
     }
   }
 }

@@ -8,7 +8,7 @@
 <p>DSH 社区讨论环境巡查插件 · 阅读整篇讨论 · 结合专题语境 · 保留原文与依据</p>
 
 <p>
-  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.8.10"><img src="https://img.shields.io/badge/试用版-0.8.10-b39a68?style=flat-square" alt="试用版 0.8.10"></a>
+  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.9.0"><img src="https://img.shields.io/badge/试用版-0.9.0-b39a68?style=flat-square" alt="试用版 0.9.0"></a>
   <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml"><img src="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml/badge.svg" alt="程序检查状态"></a>
   <a href="docs/TESTED.md"><img src="https://img.shields.io/badge/DSH_Web-0.2.2--rc.1-517d8d?style=flat-square" alt="适配 DSH Web 0.2.2-rc.1、0.2.1-rc.5 和 0.2.0-rc.2"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-517d8d?style=flat-square" alt="MIT 许可证"></a>
@@ -35,6 +35,7 @@
 | 阅读与判断 | 资料与处理 |
 | --- | --- |
 | **整篇理解语境**<br>一起读取正文、配图、评论及回复；未读全时保留范围说明。 | **专题可以更换**<br>导入或编辑背景、术语与语境说明，内置 DS 拟人争议配置。 |
+| **关键词与指定用户**<br>按关键词、用户主页或用户 ID 查笔记；可选择用户「且／或」关键词。 | **范围与费用可查看**<br>按篇数和数据额度限制读取，展示筛除、未读完和失败情况。 |
 | **依据随原文查看**<br>展示具体引文、判断理由及不确定之处，区分「可疑」与「其它」。 | **已阅与缓存管理**<br>看完标记已阅；清空旧结论或采集记录后可撤销。 |
 | **进度清楚可续跑**<br>同时统计篇数与条目数，停止后继续剩余任务，失败项可重试。 | **对话也能操作**<br>巡查助手操作工作台，配置制作助手整理专题草稿。 |
 
@@ -65,7 +66,7 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 
 按宿主提示升级或卸载旧包后重装；若仍显示旧版或入口未更新，再重启 DSH。个人数据保存在插件包目录之外，会继续保留。仓库安装获得默认分支当前版本；安装包对应指定发布版本。
 
-若遇到“0.8.9 与 DSH 0.2.2-rc.1 不兼容”，请安装 **0.8.10**，无需添加版本豁免。若重试仍取得旧版，可从 Releases 下载 0.8.10 安装包后安装；更早的 0.8.8 版本限制也已包含在修复中。
+若遇到旧包与 DSH 0.2.2-rc.1 不兼容，请安装 **0.9.0**，其中已包含 0.8.10 的兼容修复，无需添加版本豁免。若重试仍取得旧版，可从 Releases 下载 0.9.0 安装包后安装。
 
 </details>
 
@@ -76,6 +77,8 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 ### 3. 开始巡查，或先导入原文
 
 在「**巡查**」输入关键词开始读取与分析。要读取平台内容，需先在设置中填写 SocialDataX 数据密钥；也可展开「**导入原文**」，使用自己的文字试用，无需数据密钥。
+
+也可填写「**指定用户**」：接受完整主页链接或用户 ID，每行一个，最多 5 个。关键词留空时只读这些用户的笔记；同时填写关键词后，可选 **且**（标题或正文命中任一关键词）或 **或**（合并用户笔记与全站关键词结果、去重）。它不检索某用户在全站发表过的全部评论。筛选时读取笔记也计入数据额度，详见[搜索范围说明](docs/USAGE.md#搜索范围与指定用户)。
 
 默认每轮最多读取 **5 篇**、整篇分析 **5 篇**，数据读取额度 **5 元**。**数据 API、文字分析和看图分别计费**，数据额度不包含模型费用。首次可选择仅采集，核对材料后再分析。
 
@@ -96,7 +99,7 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 | --- | --- |
 | [使用手册](docs/USAGE.md) | 搜索筛选、专题设置、继续任务、缓存管理、费用与本机数据。 |
 | [专题配置指南](docs/CONTEXT_CONFIG.md) | 背景、术语与语境说明的文件格式，如何导入和分享。 |
-| [版本更新](docs/CHANGELOG.md) | 0.8.10 适配 DSH 0.2.2-rc.1 及近期更新。 |
+| [版本更新](docs/CHANGELOG.md) | 0.9.0 指定用户与关键词且／或组合，及近期更新。 |
 | [实测记录](docs/TESTED.md) | 已验证的安装环境、程序检查和真实模型评估范围。 |
 | [反馈与贡献](CONTRIBUTING.md) | 如何报告误判、漏判和使用问题，如何参与开发。 |
 
@@ -111,7 +114,7 @@ npm test
 npm run pack:plugin
 ```
 
-生成 `artifacts/dsh-dafeiyu-patrol-0.8.10.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
+生成 `artifacts/dsh-dafeiyu-patrol-0.9.0.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
 
 `npm run dev` 提供独立界面预览，不调用真实模型。正式工作台通过 DSH 原生侧栏插槽挂载。更多验证说明见[贡献指南](CONTRIBUTING.md)。
 

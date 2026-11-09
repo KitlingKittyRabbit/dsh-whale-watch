@@ -5,7 +5,7 @@ import { DEFAULT_RULES } from './rules.js';
 import { BUILTIN_DS_CONTEXT, loadedContext } from './topic-context.js';
 import { DEFAULT_SEARCH_SETTINGS } from './search-options.js';
 export const hash = text => createHash('sha256').update(text).digest('hex');
-export const defaultSettings = () => ({ ...DEFAULT_SEARCH_SETTINGS, collectionSource: 'socialdatax', apiBudgetYuan: 5, discussionAnalysisLimit: 500, discussionNoteLimit: 5, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
+export const defaultSettings = () => ({ ...DEFAULT_SEARCH_SETTINGS, users: [], userKeywordMode: 'and', collectionSource: 'socialdatax', apiBudgetYuan: 5, discussionAnalysisLimit: 500, discussionNoteLimit: 5, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
 function collectedNoteId(item) {
   return item.kind === 'note' && (item.coverage?.source === 'rendered-dom' || item.coverage?.source === 'socialdatax' && item.discussion?.complete)
     ? item.sourceKey?.match(/^note:([a-f0-9]{24})$/i)?.[1]?.toLowerCase() : null;

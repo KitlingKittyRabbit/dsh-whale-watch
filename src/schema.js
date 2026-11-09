@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { CATEGORIES, canonicalCategory } from './rules.js';
 import { SEARCH_OPTIONS } from './search-options.js';
+import { userReference } from './user-search.js';
+
+const usersSchema = z.array(z.string().trim().min(1).max(2000).refine(value => {
+  try { userReference(value); return true; } catch { return false; }
+}, '请填写小红书完整主页链接或24位用户 ID，不能使用昵称或小红书号')).max(5);
 
 export const settingsSchema = z.object({
   ...Object.fromEntries(Object.entries(SEARCH_OPTIONS).map(([key, option]) => [key, z.enum(option.choices.map(([value]) => value)).default(option.default)])),
@@ -8,7 +13,9 @@ export const settingsSchema = z.object({
   apiBudgetYuan: z.number().min(0.1).max(100).default(5),
   discussionNoteLimit: z.number().int().min(1).max(30).default(5),
   discussionAnalysisLimit: z.number().int().min(1).max(2001).default(500),
-  keywords: z.array(z.string().trim().min(1).max(80)).min(1).max(5),
+  keywords: z.array(z.string().trim().min(1).max(80)).max(5),
+  users: usersSchema.default([]),
+  userKeywordMode: z.enum(['and', 'or']).default('and'),
   provider: z.string().trim().max(100), model: z.string().trim().max(150),
   maxNotes: z.number().int().min(1).max(30),
   maxComments: z.number().int().min(0).max(50),
@@ -26,6 +33,8 @@ export const startSchema = z.object({
   discussionNoteLimit: settingsSchema.shape.discussionNoteLimit.unwrap().optional(),
   discussionAnalysisLimit: settingsSchema.shape.discussionAnalysisLimit.unwrap().optional(),
   keywords: z.array(z.string().trim().min(1).max(80)).max(5).optional(),
+  users: usersSchema.optional(),
+  userKeywordMode: z.enum(['and', 'or']).optional(),
   urls: z.array(z.string().max(2000)).max(30).optional(),
   maxNotes: settingsSchema.shape.maxNotes.optional(),
   maxComments: settingsSchema.shape.maxComments.optional(),

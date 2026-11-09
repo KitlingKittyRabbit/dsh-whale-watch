@@ -4,7 +4,7 @@
 <body>
 <div class="app">
   <aside>
-    <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16H7l-3 3V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v2"/><circle cx="16" cy="15" r="4"/><path d="m19 18 3 3"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.8.10</small></strong></div>
+    <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 16H7l-3 3V7a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v2"/><circle cx="16" cy="15" r="4"/><path d="m19 18 3 3"/></svg><strong>鲸声守望<small>WHALE WATCH · 0.9.0</small></strong></div>
     <nav aria-label="主导航"><button class="nav active" data-tab="results">巡查<span>↗</span></button><button class="nav" data-tab="context">专题<span>≡</span></button><button class="nav" data-tab="settings">设置<span>⚙</span></button></nav>
     <div class="aside-note"><span class="dot"></span>本机工作台<p>发现具体言行<br>保留原文与上下文<br>看完点击已阅</p></div>
     <a class="back" href="/">← 回到 DSH</a>
@@ -24,12 +24,13 @@
       <p class="hint">一条指一篇正文或一条评论；各项统计未阅条目及包含该类条目的篇数，同一篇可含多类内容，篇数不互斥。待分析包括失败项。</p><p id="analysis-failures" class="pending-summary" hidden></p>
       <details class="box"><summary>记录管理</summary><p id="analysis-cache-count" class="muted">正在读取旧结论缓存…</p><p class="hint">只清除标为“旧结论”的正文、评论分析；原文、配图及识图缓存、已阅状态和有效新结论保留。清理本身不调用模型；之后点击“分析未阅篇目”才会重新分析未阅内容并产生模型费用。</p><div class="actions"><button id="clear-analysis-cache" disabled>清空旧结论缓存</button><button id="restore-analysis-cache" hidden disabled>撤销清空旧结论</button></div><p class="hint">清空正文、评论、分析、已阅记录、巡查任务和已查缓存；保留模型、规则、背景和密钥，可撤销。</p><div class="actions"><button id="clear-collection">清空采集记录</button><button id="restore-collection" hidden>撤销清空采集记录</button></div></details>
       <section class="scan box"><div class="section-head"><h2>发起一次巡查</h2><span id="model-current" class="muted">读取 DSH 模型配置…</span></div>
-        <label>关键词<input id="keywords" placeholder="大肥鱼，DeepSeek拟人"></label>
-        <details><summary>搜索选项</summary><div id="search-options" class="grid-two"></div><button id="save-search-options">保存搜索选项为默认</button><p class="hint">选择用于下一次巡查；保存为默认后刷新也保留。指定链接时笔记排序、时间与类型筛选不适用，评论排序仍有效；分析未阅不会重新搜索。视频只读取文字、配图与评论，不识别视频画面或音频。多个关键词依次搜索，找到本轮数量即停止。</p>
+        <div class="grid-two"><label>关键词（可选，多个词任一命中）<input id="keywords" placeholder="大肥鱼，DeepSeek拟人"></label><label>指定用户（可选，每行一个，最多5个）<textarea id="users" rows="2" placeholder="小红书完整主页链接或24位用户 ID；不是昵称或小红书号"></textarea></label></div>
+        <label id="user-keyword-mode-field" hidden>用户与关键词的关系<select id="user-keyword-mode"><option value="and">且：在指定用户中筛选关键词</option><option value="or">或：合并用户笔记与全站关键词结果</option></select></label><p id="user-search-hint" class="hint"></p>
+        <details><summary>搜索选项</summary><div id="search-options" class="grid-two"></div><button id="save-search-options">保存搜索范围与选项为默认</button><p class="hint">选择用于下一次巡查；保存为默认后刷新也保留。指定链接优先，不应用用户及关键词条件；评论排序仍有效。用户列表按接口顺序读取，笔记排序只作用于关键词来源；用户笔记时间及类型在本地筛选，半年按近183天计算。每个用户／关键词最多查找5页候选，未读完会提示。视频只读取文字、配图与评论，不识别视频画面或音频。</p>
         <details><summary>或指定笔记链接</summary><label>每行一个链接<textarea id="urls" rows="3" placeholder="https://www.xiaohongshu.com/explore/…"></textarea></label></details>
         <label><input id="exclude-seen" type="checkbox" checked>排除已查过的笔记</label><p class="hint">只读取新笔记；要更新旧帖正文或新评论，请取消勾选。未读成功的笔记仍可重试。</p>
         <div class="actions"><span id="seen-cache-count" class="muted"></span><button id="clear-seen-cache">清空已查缓存</button><button id="restore-seen-cache" hidden>撤销上次清理</button></div><p class="hint">清空后旧帖可再次查找，原文和结果保留。</p></details>
-        <div class="actions"><button id="start" class="primary">开始巡查 →</button><button id="analyze">分析未阅讨论</button><button id="stop" class="danger" hidden>停止任务</button><button id="resume" hidden>继续任务</button></div>
+        <label><input id="collect-only" type="checkbox">仅采集，暂不调用模型</label><div class="actions"><button id="start" class="primary">开始巡查 →</button><button id="analyze">分析未阅讨论</button><button id="stop" class="danger" hidden>停止任务</button><button id="resume" hidden>继续任务</button></div>
         <p id="limits" class="hint"></p><p class="hint">浏览器自动采集已停用。仅使用数据 API 或导入原文；配图保存和机器识别请从 DSH 侧栏巡查面板查看。</p>
       </section>
       <section id="job-box" class="job box" hidden><div class="section-head"><h2><span id="job-spinner" class="job-spinner" aria-hidden="true" hidden></span><span id="job-status">任务进度</span><span id="job-live-badge" class="job-live-badge" hidden>运行中</span></h2><span id="job-counts" class="muted"></span></div><p id="job-waiting" hidden></p><p id="job-message"></p><details><summary>查看任务日志</summary><ol id="job-log"></ol></details></section>
@@ -56,7 +57,7 @@
       <form id="settings-form"><div class="box"><h2>模型与扫描范围</h2><p class="hint">默认复用 DSH 的模型和凭据。这里只选择模型，不保存 API 密钥。</p><div class="grid-two"><label>模型服务<select id="provider"><option value="">跟随 DSH 默认模型</option></select></label><label>分析模型<select id="model"><option value="">跟随默认模型</option></select></label></div><div class="grid-three"><label>每轮笔记上限<input id="maxNotes" type="number" min="1" max="30" required></label><label hidden>旧评论采样上限<input id="maxComments" type="number" min="0" max="50" required></label><label>单独导入及示例分析上限<input id="maxAnalysis" type="number" min="1" max="100" required></label></div><p class="hint">分析上限限制调用条数，每条回复最多8,192 token（思考也可能计入）。失败调用也占用额度；相同内容、规则和模型复用已保存的结果。</p></div>
       <div class="box"><h2>判断规则</h2><p class="hint">规则用于识别具体言行。修改用于后续分析，旧结论保留；需要重算时在对应篇目点击“重新分析整篇”。</p><label class="sr-only" for="rules">判断规则</label><textarea id="rules" rows="15" required></textarea></div><div class="actions"><button class="primary" type="submit">保存设置</button></div></form>
     </section>
-    <footer>鲸声守望 0.8.10（实验版） · 模型建议仅供复核 · 原文可以尖锐，判断需要语境 · 数据保存在本机</footer>
+    <footer>鲸声守望 0.9.0（实验版） · 模型建议仅供复核 · 原文可以尖锐，判断需要语境 · 数据保存在本机</footer>
   </main>
 </div>
 <script type="module" src="/plugins/dafeiyu-patrol/app.js"></script>

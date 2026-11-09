@@ -45,6 +45,19 @@ test('巡查工具沿用全部搜索选项，采集不分析；单独分析不�
   assert.equal(f.collection.length, 1); assert.equal(f.engine.state().counts.pending, 0);
 });
 
+test('巡查助手可指定用户及且或关系，单轮只给用户不附加默认关键词', async t => {
+  const f = await fixture(t), users = ['111111111111111111111111'];
+  assert.deepEqual(f.tools.patrol_start.parameters.properties.userKeywordMode.enum, ['and', 'or']);
+  await f.execute('patrol_start', { users, analyze: false }); await f.finish();
+  assert.deepEqual(f.collection[0].users, users); assert.deepEqual(f.collection[0].keywords, []);
+  await f.execute('patrol_start', { users, keywords: ['创作'], userKeywordMode: 'or', analyze: false }); await f.finish();
+  assert.deepEqual(f.collection[1].users, users); assert.deepEqual(f.collection[1].keywords, ['创作']);
+  assert.equal(f.collection[1].userKeywordMode, 'or');
+  await f.execute('patrol_settings', { users, keywords: [], userKeywordMode: 'and' });
+  assert.deepEqual(f.engine.store.data.settings.users, users); assert.deepEqual(f.engine.store.data.settings.keywords, []);
+  assert.equal(f.calls.length, 0);
+});
+
 test('按篇分析、继续剩余、明确重算、已阅和恢复与界面共用后台', async t => {
   const f = await fixture(t), ids = [];
   for (const n of [1, 2]) {

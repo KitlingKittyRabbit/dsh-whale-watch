@@ -11,6 +11,8 @@ jobs:
             cordis: 4.0.4
           - dsh: 0.2.1-rc.5
             cordis: 4.0.5
+          - dsh: 0.2.2-rc.1
+            cordis: 4.1.0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -8,9 +8,9 @@
 <p>DSH 社区讨论环境巡查插件 · 阅读整篇讨论 · 结合专题语境 · 保留原文与依据</p>
 
 <p>
-  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.8.9"><img src="https://img.shields.io/badge/试用版-0.8.9-b39a68?style=flat-square" alt="试用版 0.8.9"></a>
+  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.8.10"><img src="https://img.shields.io/badge/试用版-0.8.10-b39a68?style=flat-square" alt="试用版 0.8.10"></a>
   <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml"><img src="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml/badge.svg" alt="程序检查状态"></a>
-  <a href="docs/TESTED.md"><img src="https://img.shields.io/badge/DSH_Web-0.2.1--rc.5-517d8d?style=flat-square" alt="适配 DSH Web 0.2.1-rc.5 和 0.2.0-rc.2"></a>
+  <a href="docs/TESTED.md"><img src="https://img.shields.io/badge/DSH_Web-0.2.2--rc.1-517d8d?style=flat-square" alt="适配 DSH Web 0.2.2-rc.1、0.2.1-rc.5 和 0.2.0-rc.2"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-517d8d?style=flat-square" alt="MIT 许可证"></a>
 </p>
 
@@ -48,7 +48,7 @@
 
 ## 开始使用
 
-已在 **DSH Web 0.2.1-rc.5 和 0.2.0-rc.2、Linux、Node 24** 验证安装与原生工作台。其他系统和宿主版本尚未实测。
+已在 **DSH Web 0.2.2-rc.1、Linux、Node 24** 验证安装与原生工作台；同时保留 **0.2.1-rc.5 和 0.2.0-rc.2** 支持，详细验证范围见[实测记录](docs/TESTED.md)。其他系统和宿主版本尚未实测。
 
 ### 1. 安装插件
 
@@ -65,7 +65,7 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 
 按宿主提示升级或卸载旧包后重装；若仍显示旧版或入口未更新，再重启 DSH。个人数据保存在插件包目录之外，会继续保留。仓库安装获得默认分支当前版本；安装包对应指定发布版本。
 
-若遇到“0.8.8 与 DSH 0.2.1-rc.5 不兼容”，请安装 **0.8.9**，无需添加版本豁免。若重试仍取得 0.8.8，可从 Releases 下载 0.8.9 安装包后安装。
+若遇到“0.8.9 与 DSH 0.2.2-rc.1 不兼容”，请安装 **0.8.10**，无需添加版本豁免。若重试仍取得旧版，可从 Releases 下载 0.8.10 安装包后安装；更早的 0.8.8 版本限制也已包含在修复中。
 
 </details>
 
@@ -96,7 +96,7 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 | --- | --- |
 | [使用手册](docs/USAGE.md) | 搜索筛选、专题设置、继续任务、缓存管理、费用与本机数据。 |
 | [专题配置指南](docs/CONTEXT_CONFIG.md) | 背景、术语与语境说明的文件格式，如何导入和分享。 |
-| [版本更新](docs/CHANGELOG.md) | 0.8.9 新版 DSH 安装兼容修复及近期更新。 |
+| [版本更新](docs/CHANGELOG.md) | 0.8.10 适配 DSH 0.2.2-rc.1 及近期更新。 |
 | [实测记录](docs/TESTED.md) | 已验证的安装环境、程序检查和真实模型评估范围。 |
 | [反馈与贡献](CONTRIBUTING.md) | 如何报告误判、漏判和使用问题，如何参与开发。 |
 
@@ -111,7 +111,7 @@ npm test
 npm run pack:plugin
 ```
 
-生成 `artifacts/dsh-dafeiyu-patrol-0.8.9.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
+生成 `artifacts/dsh-dafeiyu-patrol-0.8.10.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
 
 `npm run dev` 提供独立界面预览，不调用真实模型。正式工作台通过 DSH 原生侧栏插槽挂载。更多验证说明见[贡献指南](CONTRIBUTING.md)。
 

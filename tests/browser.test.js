@@ -8,9 +8,10 @@ test('浏览器提取保留回复上下文，避免把子回复并入上级原�
   t.after(() => browser.close());
   const page = await browser.newPage();
   await page.route('https://**', route => route.abort());
+  // Extraction needs the parsed DOM, not the load event of blocked image URLs.
   await page.setContent(`<div class="note-container"><div id="detail-title">测试笔记</div><div id="detail-desc">讨论作品</div><div class="swiper-slide" data-swiper-slide-index="0"><img src="https://fe-platform.xhscdn.com/platform/loading-logo" width="48" height="48"><img src="https://sns.xhscdn.com/real-picture" width="50" height="50" alt="图片"></div>
   <div class="comment-item" id="c1"><div class="author"><span class="name">甲</span></div><div class="content"><span class="note-text">去骚扰她</span></div>
-  <div class="replies"><div class="comment-item" id="c2"><div class="author"><span class="name">乙</span></div><div class="content"><span class="note-text">我反对骚扰</span></div></div></div></div></div>`);
+  <div class="replies"><div class="comment-item" id="c2"><div class="author"><span class="name">乙</span></div><div class="content"><span class="note-text">我反对骚扰</span></div></div></div></div></div>`, { waitUntil: 'domcontentloaded' });
   // location.href is a local test page; a browser test passes a deterministic note URL.
   const data = await page.evaluate(({ source }) => {
     const extract = (0, eval)(`(${source})`);

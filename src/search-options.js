@@ -15,5 +15,5 @@ export const SEARCH_OPTIONS = {
 export const DEFAULT_SEARCH_SETTINGS = Object.fromEntries(Object.entries(SEARCH_OPTIONS).map(([key, option]) => [key, option.default]));
 export function searchSummary(settings) {
   const scope = settings.urls?.length ? `指定笔记 ${settings.urls.length} 篇` : settings.users?.length ? `指定用户 ${settings.users.length} 个${settings.keywords?.length ? settings.userKeywordMode === 'or' ? ' 或 关键词' : ' 且 关键词（标题／正文）' : '（不限制关键词）'}` : '关键词搜索';
-  return [scope, ...Object.entries(SEARCH_OPTIONS).map(([key, option]) => `${option.label}：${option.choices.find(([value]) => value === settings[key])?.[1] || option.choices.find(([value]) => value === option.default)[1]}`)].join(' · ');
+  return [scope, ...(settings.readComments === false ? ['只看笔记（不读取或分析评论）'] : []), ...Object.entries(SEARCH_OPTIONS).map(([key, option]) => `${option.label}：${option.choices.find(([value]) => value === settings[key])?.[1] || option.choices.find(([value]) => value === option.default)[1]}`)].join(' · ');
 }

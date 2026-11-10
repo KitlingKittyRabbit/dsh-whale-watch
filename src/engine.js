@@ -12,18 +12,20 @@ import { discussionHash, discussionBatches } from './discussion.js';
 import { BUILTIN_DS_CONTEXT, CONTEXT_TEMPLATE, CONTEXT_JSON_SCHEMA, parseContext, loadedContext, topicInput, createConfigBackground, exportContext, contextView } from './topic-context.js';
 import { discussionUnits, findUnit } from './units.js';
 import { SEARCH_OPTIONS, searchSummary } from './search-options.js';
+import { captureComplete, excludedNotes, scopedRecords } from './reading-scope.js';
 
 export class PatrolEngine {
   constructor(store, browser, model, apiCollector = null) { this.store = store; this.browser = browser; this.model = model; this.apiCollector = apiCollector; this.active = null; }
   async init() { await this.store.init(); await this.apiCollector?.init(); return this; }
-  itemOptions(item, options) { const unit = findUnit(item, this.store.data.items); const records = unit && !unit.standalone ? unit.records : null; return records ? { ...options, discussionHash: discussionHash(records) } : options; }
+  itemOptions(item, options) { const unit = findUnit(item, this.store.data.items); const records = unit && !unit.standalone ? scopedRecords(unit, item.kind === 'note' ? options : { ...options, readComments: true }) : null; return records?.length ? { ...options, discussionHash: discussionHash(records) } : options; }
   isStale(item) { return !!item.analysis && !!this.model.cacheKey && item.analysisKey !== this.model.cacheKey(item, this.itemOptions(item, this.analysisSettings(this.store.data.settings))); }
   analysisSettings(settings) { return { ...settings, backgroundContext: activeBackground(this.store.data), topicContext: topicInput(this.store.data.context?.active) }; }
   unitView(unit) {
     const settings = this.analysisSettings(this.store.data.settings);
     if (!unit.standalone) settings.discussionHash = discussionHash(unit.records);
+    const noteSettings = !unit.standalone && unit.note && settings.readComments === false ? { ...settings, discussionHash: discussionHash(scopedRecords(unit, settings)) } : settings;
     const entries = unit.members.map(({ history, ...item }) => {
-      const analysisStale = !!item.analysis && !!this.model.cacheKey && item.analysisKey !== this.model.cacheKey(item, settings);
+      const analysisStale = !!item.analysis && !!this.model.cacheKey && item.analysisKey !== this.model.cacheKey(item, item.kind === 'note' ? noteSettings : settings);
       // Changed context is informational. Only a missing/failed result enters
       // the ordinary queue; recomputing a saved result requires an explicit retry.
       return { ...item, analysisStale, inspectionResult: !item.analysis || item.analysisError ? null : item.analysis.decision === 'review' ? 'suspicious' : 'other' };
@@ -166,22 +168,24 @@ export class PatrolEngine {
     }
   }
   async retry(input) {
-    const { id, backgroundExpanded } = readSchema.parse(input);
+    const { id, backgroundExpanded, readComments } = readSchema.parse(input);
     if (!this.store.data.items.some(i => i.id === id)) throw new Error('没有找到这条记录');
     const item = this.store.data.items.find(i => i.id === id);
+    if ((readComments ?? this.store.data.settings.readComments) === false && item.kind === 'comment') throw new Error('当前为只看笔记模式；如需分析评论，请先切换为“笔记与评论”');
     const unit = findUnit(item, this.store.data.items);
-    return this.start({ maxAnalysis: 1, discussionNoteLimit: 1, ...(unit?.standalone ? { maxVision: 1 } : {}), backgroundExpanded }, `item:${id}`);
+    return this.start({ maxAnalysis: 1, discussionNoteLimit: 1, ...(unit?.standalone ? { maxVision: 1 } : {}), backgroundExpanded, ...(readComments !== undefined ? { readComments } : {}) }, `item:${id}`);
   }
   async markRead(input) {
     return this.mutateRecords(async () => {
       const data = readSchema.parse(input);
       const item = this.store.data.items.find(i => i.id === data.id);
       if (!item) throw new Error('没有找到这条记录');
-      const unit = findUnit(item, this.store.data.items), members = unit?.members || [item];
+      const onlyItem = (data.readComments ?? this.store.data.settings.readComments) === false;
+      const unit = findUnit(item, this.store.data.items), members = onlyItem ? [item] : unit?.members || [item];
       const previous = members.map(i => i.readAt), now = new Date().toISOString();
       for (const member of members) member.readAt = data.read ? member.readAt || now : null;
       try { await this.store.save(); } catch (error) { members.forEach((i, n) => { i.readAt = previous[n]; }); throw error; }
-      return { id: item.id, readAt: item.readAt, message: data.read ? '整篇已阅，正文及已保存评论已从当前列表移除。可在“已阅”中查看。' : '整篇已恢复到未阅列表。' };
+      return { id: item.id, readAt: item.readAt, message: onlyItem ? data.read ? '该笔记或条目已标为已阅，其他评论状态保留。' : '该笔记或条目已恢复未阅，其他评论状态保留。' : data.read ? '整篇已阅，正文及已保存评论已从当前列表移除。可在“已阅”中查看。' : '整篇已恢复到未阅列表。' };
     });
   }
 
@@ -278,6 +282,7 @@ export class PatrolEngine {
     };
     const process = async item => {
       signal.throwIfAborted();
+      if (options.readComments === false && item.kind === 'comment') return;
       if (!options.analyze || (item.readAt && !mode.startsWith('item:'))) return;
       // Ordinary runs never broaden into recomputing saved conclusions, even
       // when images, background, rules or the selected model have changed.
@@ -309,11 +314,12 @@ export class PatrolEngine {
       let unit = findUnit(item, this.store.data.items);
       if (!unit || unit.standalone) return process(item);
       if (processedDiscussions.has(unit.key)) return; processedDiscussions.add(unit.key);
+      if (options.readComments === false && !unit.note) return;
       if (!options.analyze) return;
       if (!this.model.analyzeDiscussion) throw new Error('当前模型适配器不支持整篇讨论分析');
-      const candidates = unit.members.filter(i => mode.startsWith('item:') || !i.readAt);
+      const candidates = unit.members.filter(i => (options.readComments !== false || i.kind === 'note') && (mode.startsWith('item:') || !i.readAt));
       if (!candidates.length) return;
-      let records = unit.records;
+      let records = scopedRecords(unit, options);
       const pending = candidates.filter(i => {
         if (!force && i.analysis && !i.analysisError && !job.remainingTargetIds?.includes(i.id)) { job.cached++; return false; }
         return true;
@@ -322,7 +328,7 @@ export class PatrolEngine {
       if (discussionsUsed >= discussionCap) { job.analysisDeferred = true; return; }
       discussionsUsed++; job.discussionsAttempted = discussionsUsed;
       if (force) { job.remainingTargetIds = pending.map(i => i.id); await this.store.save(); }
-      for (const record of unit.members) {
+      for (const record of options.readComments === false ? [unit.note] : unit.members) {
         if (force && this.apiCollector?.retrySavedImages) {
           const recovered = await this.apiCollector.retrySavedImages(record, signal);
           if (recovered) { progress(`重新下载已保存链接中的配图 ${recovered} 张；未重新查询数据 API`); await this.store.save(); }
@@ -330,11 +336,11 @@ export class PatrolEngine {
         await prepareImages(record, force);
       }
       const note = unit.note;
-      for (const comment of unit.comments) comment.coverage = { ...comment.coverage,
+      for (const comment of options.readComments === false ? [] : unit.comments) comment.coverage = { ...comment.coverage,
         contextImagesUnread: !!note?.coverage?.imageCount && !note.vision?.complete,
         contextMediaUnread: !!note?.coverage?.unsupportedMedia,
         discussionIncomplete: !records[0].discussion?.complete };
-      unit = findUnit(item, this.store.data.items); records = unit.records;
+      unit = findUnit(item, this.store.data.items); records = scopedRecords(unit, options);
       const settings = { ...options, discussionHash: discussionHash(records) };
       for (const i of pending) {
         if (options.backgroundExpanded !== undefined) i.backgroundExpanded = options.backgroundExpanded;
@@ -342,9 +348,9 @@ export class PatrolEngine {
       let processed = 0;
       for (const targets of discussionBatches(pending)) {
         signal.throwIfAborted(); analysisUsed += targets.length;
-        progress(`整篇分析第 ${discussionsUsed} 篇／上限 ${discussionCap}：“${records[0].title}”及${unit.comments.length}条已保存评论，已处理${processed}／${pending.length}条；本批${targets.length}条${targets.some(i => i.analysisError) ? '，失败项单独重试' : ''}`);
+        progress(`${options.readComments === false ? '笔记分析' : '整篇分析'}第 ${discussionsUsed} 篇／上限 ${discussionCap}：“${records[0].title}”${options.readComments === false ? '（不使用评论）' : `及${unit.comments.length}条已保存评论`}，已处理${processed}／${pending.length}条；本批${targets.length}条${targets.some(i => i.analysisError) ? '，失败项单独重试' : ''}`);
         let results;
-        try { results = await this.model.analyzeDiscussion(records, targets, settings, signal, { onVerification: () => job.verificationCalls++, onRepair: () => { job.quoteRepairCalls++; progress('模型引文校验未通过，单独修复一次；严格校验仍保留，模型费用另计'); }, onDiscussionCall: () => job.discussionCalls++ }); }
+        try { results = await this.model.analyzeDiscussion(records, options.readComments === false ? targets.map(t => records.find(r => r.id === t.id)) : targets, settings, signal, { onVerification: () => job.verificationCalls++, onRepair: () => { job.quoteRepairCalls++; progress('模型引文校验未通过，单独修复一次；严格校验仍保留，模型费用另计'); }, onDiscussionCall: () => job.discussionCalls++ }); }
         catch (error) { if (signal.aborted) throw error; results = targets.map(i => ({ id: i.id, error: error.message })); }
         for (const target of targets) {
           const row = results.find(r => r.id === target.id);
@@ -387,8 +393,8 @@ export class PatrolEngine {
         }
       } else if (mode === 'scan') {
         const notes = (job.scopeItemIds || []).map(id => this.store.data.items.find(i => i.id === id)).filter(Boolean);
-        const completedInThisTask = notes.filter(i => i.kind === 'note' && i.discussion?.complete).map(i => i.discussionNoteId || /^note:([a-f0-9]{24})$/i.exec(i.sourceKey || '')?.[1]).filter(Boolean);
-        const excludedNoteIds = [...new Set([...(options.excludeSeen ? this.store.data.seenCache.ids : []), ...completedInThisTask])];
+        const completedInThisTask = notes.filter(i => i.kind === 'note' && captureComplete(i, options)).map(i => i.discussionNoteId || /^note:([a-f0-9]{24})$/i.exec(i.sourceKey || '')?.[1]).filter(Boolean);
+        const excludedNoteIds = [...new Set([...excludedNotes(this.store, options), ...completedInThisTask])];
         for await (const record of this.collectRecords({ ...options, excludedNoteIds }, signal, progress)) {
           job.collected++; if (record.kind === 'note') { job.notesRead++; if (record.discussion && !record.discussion.complete) job.discussionGaps.push({ title: record.title, limitations: record.discussion.limitations }); }
           const item = await this.store.upsert(record, { persist: options.collectionSource !== 'socialdatax' });
@@ -597,13 +603,13 @@ export class PatrolEngine {
     if (!job || !(['paused', 'cancelled', 'interrupted'].includes(job.status) || job.status === 'partial' && job.analysisDeferred)) throw new Error('没有可继续的已停止、暂停或达到分析篇数上限的任务');
     if (job.mode === 'background') throw new Error('旧背景阅读已停用，请到专题页编辑资料或让 AI 制作配置');
     if (job.mode === 'evaluate') throw new Error('评估任务请到“示例评估”重新运行');
-    const { keywords, users, userKeywordMode, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort, publishTimeRange, noteType, commentSort } = job.options;
-    const options = { urls: urls || [], keywords: keywords || [], users: users || [], userKeywordMode: userKeywordMode || 'and', maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort: noteSort || 'time_descending', publishTimeRange: publishTimeRange || 'all', noteType: noteType || 'all', commentSort: commentSort || 'default' };
+    const { keywords, users, userKeywordMode, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, readComments, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort, publishTimeRange, noteType, commentSort } = job.options;
+    const options = { urls: urls || [], keywords: keywords || [], users: users || [], userKeywordMode: userKeywordMode || 'and', maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, readComments: readComments !== false, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort: noteSort || 'time_descending', publishTimeRange: publishTimeRange || 'all', noteType: noteType || 'all', commentSort: commentSort || 'default' };
     // Stopped scans may already have saved records that their seen-note cache would skip.
     let mode = job.mode === 'scan' && job.status !== 'paused' && analyze && this.state().counts.pending > 0 ? 'analyze' : job.mode;
     let resumeScope = job.scopeItemIds ? { itemIds: job.scopeItemIds, originalMaxNotes: job.originalMaxNotes } : null;
-    if (job.mode === 'scan' && users?.length && Array.isArray(job.collectedItemIds)) {
-      const completed = job.collectedItemIds.map(id => this.store.data.items.find(i => i.id === id)).filter(i => i?.kind === 'note' && i.discussion?.complete).length;
+    if (job.mode === 'scan' && (users?.length || readComments === false) && Array.isArray(job.collectedItemIds)) {
+      const completed = job.collectedItemIds.map(id => this.store.data.items.find(i => i.id === id)).filter(i => i?.kind === 'note' && captureComplete(i, options)).length;
       const originalMaxNotes = job.originalMaxNotes || maxNotes;
       const remaining = originalMaxNotes - completed;
       mode = job.collectionComplete || remaining <= 0 ? 'analyze' : 'scan';

@@ -21,6 +21,7 @@ export const settingsSchema = z.object({
   maxComments: z.number().int().min(0).max(50),
   maxAnalysis: z.number().int().min(1).max(100),
   readImages: z.boolean().default(true),
+  readComments: z.boolean().default(true),
   visionProvider: z.string().trim().max(100).default(''), visionModel: z.string().trim().max(150).default(''),
   maxImagesPerNote: z.number().int().min(1).max(18).default(18),
   maxVision: z.number().int().min(1).max(30).default(5),
@@ -41,6 +42,7 @@ export const startSchema = z.object({
   maxAnalysis: settingsSchema.shape.maxAnalysis.optional(),
   analyze: z.boolean().optional(),
   readImages: z.boolean().optional(),
+  readComments: z.boolean().optional(),
   maxImagesPerNote: settingsSchema.shape.maxImagesPerNote.unwrap().optional(),
   maxVision: settingsSchema.shape.maxVision.unwrap().optional(),
   backgroundExpanded: z.boolean().optional(),
@@ -60,7 +62,7 @@ export const analysisSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 export const resumeSchema = z.object({ jobId: z.string().min(1).max(100).optional() });
-export const readSchema = z.object({ id: z.string().min(1).max(100), read: z.boolean().default(true), backgroundExpanded: z.boolean().optional() });
+export const readSchema = z.object({ id: z.string().min(1).max(100), read: z.boolean().default(true), backgroundExpanded: z.boolean().optional(), readComments: z.boolean().optional() });
 export const reviewSchema = z.object({
   id: z.string().max(100),
   verdict: z.enum(['confirmed', 'dismissed', 'uncertain', 'pending']),

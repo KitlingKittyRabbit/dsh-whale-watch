@@ -36,9 +36,17 @@ function fillModels() {
   $('model').disabled = !provider;
 }
 function searchSelection() { return Object.fromEntries(Object.keys(state.searchOptions || {}).map(key => [key, $('search-' + key).value])); }
-function scopeSelection() { return { keywords: split($('keywords').value), users: $('users').value.split('\n').map(s => s.trim()).filter(Boolean), userKeywordMode: $('user-keyword-mode').value }; }
+const readingComments = () => $('reading-scope').value !== 'note';
+function scopeSelection() { return { keywords: split($('keywords').value), users: $('users').value.split('\n').map(s => s.trim()).filter(Boolean), userKeywordMode: $('user-keyword-mode').value, readComments: readingComments() }; }
 function scopeControls() {
   const { users, keywords, userKeywordMode } = scopeSelection(), urls = !!$('urls').value.trim();
+  $('reading-scope').disabled = !!state?.activeJob;
+  $('reading-scope-hint').textContent = readingComments() ? '' : '只采集笔记标题、正文与配图，分析也不使用评论。已有评论保留；上方统计仍包含已保存评论。保存范围为默认后刷新也会保留。';
+  $('analyze').textContent = readingComments() ? '分析未阅讨论' : '分析未阅笔记';
+  if (state?.settings) {
+    const s = state.settings;
+    $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · ${readingComments() ? '评论及回复自动分页读取，受费用上限限制' : '只读取笔记，不请求评论及回复'} · ${s.discussionNoteLimit} 篇分析。`;
+  }
   $('user-keyword-mode-field').hidden = !users.length || !keywords.length;
   for (const id of ['users', 'keywords', 'user-keyword-mode']) $(id).disabled = urls || !!state?.activeJob;
   $('user-search-hint').textContent = urls ? '本轮只读取指定笔记链接，不使用用户与关键词条件。' : users.length ? keywords.length ? userKeywordMode === 'and' ? '且：指定用户的笔记标题或正文包含任一关键词才进入分析。筛选也计数据费，不搜索全站评论。' : '或：用户笔记与全站关键词结果交替选取、合并去重，共用篇数和数据额度。' : '只读取指定用户的笔记，不附加默认关键词。' : '用户留空时按关键词搜索；也可清空关键词，只指定用户。';
@@ -55,6 +63,7 @@ function settingsForm() {
   const s = state.settings;
   searchForm();
   $('keywords').value = s.keywords.join('，');
+  $('reading-scope').value = s.readComments === false ? 'note' : 'discussion';
   $('users').value = (s.users || []).join('\n'); $('user-keyword-mode').value = s.userKeywordMode || 'and'; scopeControls();
   for (const key of ['maxNotes', 'maxComments', 'maxAnalysis', 'rules']) $(key).value = s[key];
   $('provider').value = s.provider; fillModels();
@@ -87,7 +96,6 @@ async function refresh() {
     const route = s.provider ? s : catalog.current;
     $('model-current').textContent = catalog.mode === 'offline' ? '独立预览：请在 DSH 内使用模型分析' : `分析模型：${route.provider} / ${route.model}`;
   }
-  $('limits').textContent = `本轮上限：${s.maxNotes} 篇笔记 · 评论及回复自动分页读取，受费用上限限制 · ${s.discussionNoteLimit} 篇整篇分析。`;
   const running = !!state.activeJob;
   $('data-key-status').textContent = state.dataService?.configured ? '数据密钥已配置。' : '尚未配置数据密钥；可先导入原文或分析已保存内容。';
   $('data-key').disabled = running;
@@ -178,17 +186,20 @@ function discussionCard(item) {
   if (pending.length) node.append(el('p', `待分析组成：${failed}条失败 · ${pending.length - failed}条尚未分析。`, 'hint'));
   if (retained) node.append(el('p', `${retained}条保留旧结论（材料、规则或模型已变化），不计入待分析，不会自动重算。`, 'hint'));
   for (const text of item.discussionSummary.limitations) node.append(el('p', text, 'uncertainties'));
-  const detail = el('details'); detail.append(el('summary', '查看正文、配图提示及评论判断'));
-  for (const entry of item.entries) detail.append(card(entry, true));
+  const detail = el('details'); detail.append(el('summary', readingComments() ? '查看正文、配图提示及评论判断' : '查看笔记正文、配图提示及判断'));
+  for (const entry of item.entries.filter(i => readingComments() || i.kind === 'note')) detail.append(card(entry, true));
+  if (!readingComments() && item.discussionSummary.commentsRead) node.append(el('p', '当前只看笔记；已保存评论保留，不参与本轮分析。', 'hint'));
   node.append(detail);
-  const read = el('button', item.readAt ? '整篇恢复未阅' : '整篇已阅');
+  const markedRead = readingComments() ? item.readAt : item.entries.find(i => i.kind === 'note')?.readAt;
+  const read = el('button', readingComments() ? markedRead ? '整篇恢复未阅' : '整篇已阅' : markedRead ? '恢复笔记未阅' : '笔记已阅');
   read.disabled = !!state.activeJob;
-  read.addEventListener('click', () => action(read, '/read', { id: item.id, read: !item.readAt }));
-  const retry = el('button', `重新分析整篇（${item.entries.length}条，模型费用另计）`); retry.disabled = !!state.activeJob;
+  read.addEventListener('click', () => action(read, '/read', { id: item.id, read: !markedRead }));
+  const retry = el('button', readingComments() ? `重新分析整篇（${item.entries.length}条，模型费用另计）` : '重新分析笔记（1条，模型费用另计）'); retry.disabled = !!state.activeJob || !readingComments() && !item.noteId;
   retry.addEventListener('click', () => action(retry, '/analyze/item', { id: item.id }));
   node.append(read, retry); return node;
 }
 async function action(button, path, data = {}) {
+  if (['/start', '/analyze', '/analyze/item', '/read'].includes(path)) data = { readComments: readingComments(), ...data };
   if (path.startsWith('/analysis-cache/') && (actionBusy || state?.activeJob || !state?.analysisCache || path.endsWith('/clear') && !state.analysisCache.count || path.endsWith('/restore') && !state.analysisCache.canRestore)) return;
   actionBusy = true; button.disabled = true; analysisCacheControls();
   try { const result = await api(path, data); if (path === '/data-key') $('data-key').value = ''; notice(result.message || '操作完成'); await refresh(); }
@@ -201,6 +212,7 @@ $('clear-data-key').addEventListener('click', () => action($('clear-data-key'), 
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => { tab(button.dataset.tab); if (activeTab === 'results') refreshResults(true).catch(e => notice(e.message, true)); }));
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { filter = button.dataset.filter; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b === button)); refreshResults(true).catch(e => notice(e.message, true)); }));
 for (const id of ['users', 'keywords', 'urls', 'user-keyword-mode']) $(id).addEventListener('input', scopeControls);
+$('reading-scope').addEventListener('change', () => { scopeControls(); if (state) refreshResults(true).catch(e => notice(e.message, true)); });
 $('save-search-options').addEventListener('click', () => action($('save-search-options'), '/settings', { ...state.settings, ...searchSelection(), ...scopeSelection() }));
 $('start').addEventListener('click', () => { const urls = $('urls').value.split('\n').map(s => s.trim()).filter(Boolean); action($('start'), '/start', { ...(urls.length ? { urls } : scopeSelection()), analyze: !$('collect-only').checked, excludeSeen: $('exclude-seen').checked, ...searchSelection() }); });
 for (const id of ['analyze', 'stop', 'resume']) $(id).addEventListener('click', () => action($(id), '/' + id));

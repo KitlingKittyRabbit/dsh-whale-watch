@@ -151,7 +151,7 @@ export class SocialDataX {
         const remaining = !references.length && !options.keywords.length ? Math.max(1, Math.min(options.maxNotes - collected, explicitNotes.size - collected - reported.size)) : null;
         throw new ApiLimit(`本轮数据费用上限已到，${remaining ? `另有${remaining}篇候选笔记未读取` : '候选笔记尚未全部检查'}`);
       }
-      signal.throwIfAborted(); progress({ type: 'attempt', message: '正在读取整篇笔记和评论区' });
+      signal.throwIfAborted(); progress({ type: 'attempt', message: options.readComments === false ? '正在读取笔记，跳过评论区' : '正在读取整篇笔记和评论区' });
       const data = await this.request('/note/detail', entry.note_id ? { note_id: entry.note_id } : { note_url: entry.note_url }, detail, session, signal, progress);
       const key = data.note_id.toLowerCase();
       const expectedId = entry.note_id || noteId(entry.note_url || '');
@@ -186,7 +186,7 @@ export class SocialDataX {
           tokens.add(token);
         }
       };
-      try {
+      if (options.readComments !== false) try {
         topComplete = await readPages('/note/comment/list', { note_id: key, sort_type: options.commentSort });
         repliesComplete = topComplete;
         for (const row of [...rows.values()].filter(r => !r.parent_comment_id && r.reply_count > 0)) {
@@ -194,8 +194,8 @@ export class SocialDataX {
         }
       } catch (error) { repliesComplete = false; limits.push(error instanceof ApiLimit ? error.message : signal.aborted ? '用户停止，评论区未读取完' : error.message); }
       const totalReported = data.comment_count;
-      if (rows.size < totalReported) limits.push(`接口标注${totalReported}条评论，实际返回${rows.size}条；隐藏、删除或不可返回内容无法确认`);
-      let complete = topComplete && repliesComplete && !limits.length;
+      if (options.readComments !== false && rows.size < totalReported) limits.push(`接口标注${totalReported}条评论，实际返回${rows.size}条；隐藏、删除或不可返回内容无法确认`);
+      let complete = options.readComments === false || topComplete && repliesComplete && !limits.length;
       const sources = data.image_items.map((v, i) => ({ index: i + 1, url: v.image_url }));
       const saveImages = async sources => {
         if (signal.aborted) return [];
@@ -217,10 +217,11 @@ export class SocialDataX {
             parentMissing: !!row.parent_comment_id && !parent, unsupportedMedia: row.content_type === 'voice', discussionIncomplete: !complete } });
       }
       const note = { kind: 'note', sourceKey: `note:${key}`, discussionNoteId: key, text: data.content.slice(0, 15000), title: data.title, author: data.author?.name || '', authorId: data.author?.user_id || '', url, context: '', images,
-        discussion: { sourceKeys: comments.map(c => c.sourceKey), complete, limitations: limits, reportedComments: totalReported, commentsRead: rows.size, commentPages, replyPages, fetchedAt: new Date().toISOString() },
+        discussion: { ...(options.readComments === false ? { scope: 'note' } : {}), sourceKeys: comments.map(c => c.sourceKey), complete, limitations: limits, reportedComments: totalReported, commentsRead: rows.size, commentPages, replyPages, fetchedAt: new Date().toISOString() },
         coverage: { source: 'socialdatax', imageCount: sources.length, imagesUnread: sources.length > 0, textTruncated: data.content.length > 15000,
           discussionIncomplete: !complete, unsupportedMedia: data.note_type === 'video' } };
       if (signal.aborted) { complete = false; note.discussion.complete = false; note.coverage.discussionIncomplete = true; for (const comment of comments) comment.coverage.discussionIncomplete = true; }
+      note.lastCapture = { scope: options.readComments === false ? 'note' : 'discussion', complete, fetchedAt: note.discussion.fetchedAt };
       yield { note, comments };
       collected++;
       if (signal.aborted) signal.throwIfAborted();

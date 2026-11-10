@@ -5,7 +5,7 @@ import { DEFAULT_RULES } from './rules.js';
 import { BUILTIN_DS_CONTEXT, loadedContext } from './topic-context.js';
 import { DEFAULT_SEARCH_SETTINGS } from './search-options.js';
 export const hash = text => createHash('sha256').update(text).digest('hex');
-export const defaultSettings = () => ({ ...DEFAULT_SEARCH_SETTINGS, users: [], userKeywordMode: 'and', collectionSource: 'socialdatax', apiBudgetYuan: 5, discussionAnalysisLimit: 500, discussionNoteLimit: 5, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
+export const defaultSettings = () => ({ ...DEFAULT_SEARCH_SETTINGS, users: [], userKeywordMode: 'and', collectionSource: 'socialdatax', apiBudgetYuan: 5, discussionAnalysisLimit: 500, discussionNoteLimit: 5, keywords: ['大肥鱼', 'DeepSeek拟人'], provider: '', model: '', maxNotes: 5, maxComments: 10, maxAnalysis: 55, readImages: true, readComments: true, visionProvider: '', visionModel: '', maxImagesPerNote: 18, maxVision: 5, rules: DEFAULT_RULES });
 function collectedNoteId(item) {
   return item.kind === 'note' && (item.coverage?.source === 'rendered-dom' || item.coverage?.source === 'socialdatax' && item.discussion?.complete)
     ? item.sourceKey?.match(/^note:([a-f0-9]{24})$/i)?.[1]?.toLowerCase() : null;
@@ -143,17 +143,19 @@ export class Store {
     const identity = record.sourceKey || hash(record.url + '\n' + record.kind + '\n' + record.text + '\n' + record.context);
     const id = hash(identity).slice(0, 24);
     const existing = this.data.items.find(item => item.id === id);
+    const noteId = collectedNoteId(record);
+    // Refreshing a note without comments must preserve the previous comment snapshot.
+    if (record.lastCapture?.scope === 'note' && existing?.discussion?.sourceKeys?.length) record = { ...record, discussion: existing.discussion };
     const contentHash = hash(JSON.stringify([record.kind, record.title, record.text, record.context, record.coverage, (record.images || []).map(i => [i.index, i.attachment?.attachmentId || null, i.error || null]), record.discussion ? { ...record.discussion, fetchedAt: undefined } : undefined,
       record.discussionNoteId ? [record.author, record.parentCommentId, record.threadRootId] : undefined]));
     const now = new Date().toISOString();
-    const noteId = collectedNoteId(record);
     if (noteId && !this.data.seenCache.ids.includes(noteId)) this.data.seenCache.ids.push(noteId);
     if (existing) {
       if (existing.contentHash !== contentHash) {
         const history = [...(existing.history || []), { text: existing.text, analysis: existing.analysis, review: existing.review, images: existing.images, vision: existing.vision, readAt: existing.readAt, at: now }].slice(-5);
         Object.assign(existing, record, { contentHash, analysis: null, analysisKey: null, analysisError: null, review: { verdict: 'pending', note: '' }, history, vision: null, readAt: null });
       }
-      existing.lastSeenAt = now; if (record.images) existing.images = record.images; existing.url = record.url; if (persist) await this.save(); return existing;
+      existing.lastSeenAt = now; if (record.lastCapture) existing.lastCapture = record.lastCapture; if (record.images) existing.images = record.images; existing.url = record.url; if (persist) await this.save(); return existing;
     }
     const item = { ...record, id, contentHash, capturedAt: now, lastSeenAt: now, analysis: null, readAt: null, review: { verdict: 'pending', note: '' } };
     this.data.items.unshift(item); if (persist) await this.save(); return item;

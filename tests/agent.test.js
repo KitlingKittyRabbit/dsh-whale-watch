@@ -58,6 +58,16 @@ test('巡查助手可指定用户及且或关系，单轮只给用户不附加�
   assert.equal(f.calls.length, 0);
 });
 
+test('巡查预设暴露只看笔记选项，开始与默认设置传递范围，省略时沿用已保存选择', async t => {
+  const f = await fixture(t);
+  for (const tool of ['patrol_start', 'patrol_analyze', 'patrol_retry', 'patrol_settings']) assert.equal(f.tools[tool].parameters.properties.readComments.type, 'boolean');
+  await f.execute('patrol_start', { readComments: false, analyze: false }); await f.finish();
+  assert.equal(f.collection[0].readComments, false);
+  await f.execute('patrol_settings', { readComments: false });
+  await f.execute('patrol_start', { analyze: false }); await f.finish();
+  assert.equal(f.collection[1].readComments, false); assert.equal(f.calls.length, 0);
+});
+
 test('按篇分析、继续剩余、明确重算、已阅和恢复与界面共用后台', async t => {
   const f = await fixture(t), ids = [];
   for (const n of [1, 2]) {

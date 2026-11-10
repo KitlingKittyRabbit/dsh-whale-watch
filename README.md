@@ -8,7 +8,7 @@
 <p>DSH 社区讨论环境巡查插件 · 阅读整篇讨论 · 结合专题语境 · 保留原文与依据</p>
 
 <p>
-  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.9.0"><img src="https://img.shields.io/badge/试用版-0.9.0-b39a68?style=flat-square" alt="试用版 0.9.0"></a>
+  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.9.1"><img src="https://img.shields.io/badge/试用版-0.9.1-b39a68?style=flat-square" alt="试用版 0.9.1"></a>
   <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml"><img src="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml/badge.svg" alt="程序检查状态"></a>
   <a href="docs/TESTED.md"><img src="https://img.shields.io/badge/DSH_Web-0.2.2--rc.1-517d8d?style=flat-square" alt="适配 DSH Web 0.2.2-rc.1、0.2.1-rc.5 和 0.2.0-rc.2"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-517d8d?style=flat-square" alt="MIT 许可证"></a>
@@ -66,7 +66,7 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 
 按宿主提示升级或卸载旧包后重装；若仍显示旧版或入口未更新，再重启 DSH。个人数据保存在插件包目录之外，会继续保留。仓库安装获得默认分支当前版本；安装包对应指定发布版本。
 
-若遇到旧包与 DSH 0.2.2-rc.1 不兼容，请安装 **0.9.0**，其中已包含 0.8.10 的兼容修复，无需添加版本豁免。若重试仍取得旧版，可从 Releases 下载 0.9.0 安装包后安装。
+若遇到旧包与 DSH 0.2.2-rc.1 不兼容，请安装 **0.9.1**，其中已包含 0.8.10 的兼容修复，无需添加版本豁免。若重试仍取得旧版，可从 Releases 下载 0.9.1 安装包后安装。
 
 </details>
 
@@ -77,6 +77,8 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 ### 3. 开始巡查，或先导入原文
 
 在「**巡查**」输入关键词开始读取与分析。要读取平台内容，需先在设置中填写 SocialDataX 数据密钥；也可展开「**导入原文**」，使用自己的文字试用，无需数据密钥。
+
+在「**读取范围**」选择 **只看笔记**，可跳过评论及回复，只采集和分析笔记标题、正文及配图；已有评论保留。选择后可在「搜索选项」保存为默认，也可随时切回「笔记与评论」补采。智能体巡查工具支持相同范围。
 
 也可填写「**指定用户**」：接受完整主页链接或用户 ID，每行一个，最多 5 个。关键词留空时只读这些用户的笔记；同时填写关键词后，可选 **且**（标题或正文命中任一关键词）或 **或**（合并用户笔记与全站关键词结果、去重）。它不检索某用户在全站发表过的全部评论。筛选时读取笔记也计入数据额度，详见[搜索范围说明](docs/USAGE.md#搜索范围与指定用户)。
 
@@ -99,7 +101,7 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 | --- | --- |
 | [使用手册](docs/USAGE.md) | 搜索筛选、专题设置、继续任务、缓存管理、费用与本机数据。 |
 | [专题配置指南](docs/CONTEXT_CONFIG.md) | 背景、术语与语境说明的文件格式，如何导入和分享。 |
-| [版本更新](docs/CHANGELOG.md) | 0.9.0 指定用户与关键词且／或组合，及近期更新。 |
+| [版本更新](docs/CHANGELOG.md) | 0.9.1 只看笔记模式，及近期更新。 |
 | [实测记录](docs/TESTED.md) | 已验证的安装环境、程序检查和真实模型评估范围。 |
 | [反馈与贡献](CONTRIBUTING.md) | 如何报告误判、漏判和使用问题，如何参与开发。 |
 
@@ -114,7 +116,7 @@ npm test
 npm run pack:plugin
 ```
 
-生成 `artifacts/dsh-dafeiyu-patrol-0.9.0.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
+生成 `artifacts/dsh-dafeiyu-patrol-0.9.1.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
 
 `npm run dev` 提供独立界面预览，不调用真实模型。正式工作台通过 DSH 原生侧栏插槽挂载。更多验证说明见[贡献指南](CONTRIBUTING.md)。
 

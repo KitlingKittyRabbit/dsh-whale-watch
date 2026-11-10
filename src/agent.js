@@ -11,6 +11,7 @@ const limits = {
   discussionNoteLimit: { type: 'integer', description: '本轮整篇分析上限，1到30篇，省略沿用设置' },
   discussionAnalysisLimit: { type: 'integer', description: '每篇最多分析条目数，1到2001；省略沿用设置' },
   readImages: { type: 'boolean', description: '是否调用看图模型读取已保存配图' },
+  readComments: { type: 'boolean', description: 'false=只看笔记：不采集评论及回复，分析也只用笔记标题、正文和已读取配图；旧评论保留但不送入模型。true=笔记与评论，省略沿用设置' },
   maxVision: { type: 'integer', description: '每轮看图内容上限，1到30，带图评论也占名额' },
   maxImagesPerNote: { type: 'integer', description: '每篇配图上限，1到18' },
 };
@@ -49,8 +50,9 @@ export function apply(ctx) {
   tool('patrol_resume', '继续已停止或中断任务的剩余工作，沿用原任务选项和预算，保留成功结果。省略jobId时继续最近可恢复任务。采集任务可能继续数据请求和模型调用。', {
     jobId: { type: 'string', description: 'patrol_status 返回的原任务编号' },
   }, async args => engine.resume(args));
-  tool('patrol_retry', '用户明确要求重新分析整篇时调用：重算指定笔记及已保存评论，包括已有成功结果；不重新采集，模型另收费。单独导入内容仅重算本条。', {
+  tool('patrol_retry', '用户明确要求重算时调用：按读取范围重算指定笔记及已保存评论，包括已有成功结果；readComments=false只重算笔记，不使用评论。不重新采集，模型另收费。单独导入内容仅重算本条。', {
     id: { type: 'string', required: true, description: '结果中的篇目或条目编号' },
+    readComments: limits.readComments,
   }, async args => engine.retry(args));
   tool('patrol_import', '导入用户提供的原文和上下文。默认导入并分析，模型另收费；analyze=false只保存。不会凭链接重新采集，不虚构图片或评论。', {
     text: { type: 'string', required: true, description: '原文，最多15000字' },
@@ -126,6 +128,7 @@ export function apply(ctx) {
   }, (_args, value) => [{ type: 'text', text: JSON.stringify({ source: value.source, filename: value.filename, message: value.message }) }, { type: 'file', attachment: value.attachment }]);
   tool('patrol_mark_read', '仅当用户明确说已看过某条内容或要求标为已阅时调用。已阅后从未阅列表移除，原文和模型结果保留。read=false恢复未阅。不得自行将内容批量标为已阅。', {
     id: { type: 'string', required: true }, read: { type: 'boolean', description: '默认true；false恢复未阅' },
+    readComments: { type: 'boolean', description: 'false只标记指定笔记或条目，不改变其他评论；true标记整篇，省略沿用读取范围设置' },
   }, async args => engine.markRead(args));
   tool('patrol_clear_cache', '仅在用户明确要求清理已查缓存时调用。允许旧帖再次采集，保留原文、模型结果和复核，可撤销；任务运行中不可清理。', {}, async () => engine.clearSeenCache());
   tool('patrol_restore_cache', '用户要求撤销上次已查缓存清理时调用，恢复排除历史。', {}, async () => engine.restoreSeenCache());

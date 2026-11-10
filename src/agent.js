@@ -2,6 +2,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { readFile, stat } from 'node:fs/promises';
 import { SEARCH_OPTIONS } from './search-options.js';
 import { USER_KEYWORD_MODES } from './user-search.js';
+import { restrictToPresetTools, SCHEDULE_TOOLS } from './tool-boundary.js';
 
 const searchParameters = Object.fromEntries(Object.entries(SEARCH_OPTIONS).map(([key, option]) => [key, {
   type: 'string', enum: option.choices.map(([value]) => value),
@@ -31,10 +32,11 @@ async function configInput(args) {
 }
 export const name = 'dafeiyu-patrol-agent-tools';
 export const inject = ['tools', 'dafeiyuPatrol'];
-export function apply(ctx) {
+export function apply(ctx, config = {}) {
   const engine = ctx.dafeiyuPatrol;
+  const names = [];
   const render = (_args, value) => [{ type: 'text', text: JSON.stringify(value) }];
-  const tool = (name, description, parameters, execute, renderer = render) => ctx.effect(() => ctx.tools.register(defineTool({ name, description, parameters, output: { schema: { type: 'json' }, render: renderer }, execute })), `patrol tool ${name}`);
+  const tool = (name, description, parameters, execute, renderer = render) => { names.push(name); return ctx.effect(() => ctx.tools.register(defineTool({ name, description, parameters, output: { schema: { type: 'json' }, render: renderer }, execute })), `patrol tool ${name}`); };
   tool('patrol_start', '发起关键词、指定用户或指定笔记采集，立即返回任务编号。users与keywords可按and/or组合；两项都省略才沿用默认范围，只传users不会追加默认关键词。用户列表按接口顺序读取，笔记排序仅作用于关键词搜索；用户与关键词合并时交替取候选，不作全局热度排名。SocialDataX分页读取正文、配图、评论和回复，受数据费用限制，再分析已保存讨论。不得提高预算或回退浏览器。', {
     ...searchParameters, ...userParameters, ...limits,
     collectionSource: { type: 'string', enum: ['socialdatax'], description: '使用面板配置；只有用户明确要求才更改' },
@@ -137,4 +139,5 @@ export function apply(ctx) {
   tool('patrol_clear_collection', '只有用户明确要求清空采集记录时调用。清空正文、评论、分析、已阅记录、对应任务和已查缓存；模型、规则、背景及密钥保留。可撤销最近一次清空；询问怎么清空不等于要求立即清空。', {}, async () => engine.clearCollection());
   tool('patrol_restore_collection', '用户要求撤销清空采集记录时调用，恢复旧记录，并保留清空后新采集的内容。', {}, async () => engine.restoreCollection());
   tool('patrol_stop', '停止正在进行的巡查，保留已经保存的结果。', {}, async () => engine.stop());
+  restrictToPresetTools(ctx, [...names, ...(config.scheduleTools ? SCHEDULE_TOOLS : [])]);
 }

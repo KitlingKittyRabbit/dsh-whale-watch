@@ -381,12 +381,12 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Field, { label: '判断规则' }, h('textarea', { value: draft.rules, onChange: updateDraft('rules'), rows: 16, required: true, minLength: 20, maxLength: 12000 }))),
             h(Button, { type: 'submit', primary: true, disabled: busy || running }, '保存设置')),
           tab === 'topic' && h(Topic, { context: state.context, busy, running, act, openBuilder })),
-        h('footer', { className: 'patrol-footer' }, '鲸声守望 0.9.1（实验版） · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
+        h('footer', { className: 'patrol-footer' }, '鲸声守望 0.9.2（实验版） · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
   }
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout', 'sessions', 'remote', 'remote.agentPresets', 'uiWorkspace'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.9.1-desk8';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.9.2-desk8';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,

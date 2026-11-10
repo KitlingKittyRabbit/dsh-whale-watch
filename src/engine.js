@@ -69,7 +69,7 @@ export class PatrolEngine {
     const entries = unread.flatMap(i => i.entries.filter(e => !e.readAt));
     const oldResults = units.flatMap(unit => unit.entries).filter(item => item.analysis && (item.analysisStale || item.analysisError));
     const suspicious = unread.filter(i => i.inspectionResult === 'suspicious').length;
-    return { settings: data.settings, searchOptions: SEARCH_OPTIONS, policy: { version: 'community-environment-v8', contextGuide: this.store.data.context?.active?.config.interpretationNotes.join('\n') || '' }, context: contextView(data), dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
+    return { settings: data.settings, capabilities: { schedule: !!this.capabilities?.schedule }, searchOptions: SEARCH_OPTIONS, policy: { version: 'community-environment-v8', contextGuide: this.store.data.context?.active?.config.interpretationNotes.join('\n') || '' }, context: contextView(data), dataService: { configured: !!this.apiCollector?.hasKey }, jobs: data.jobs.slice(-20).reverse(), counts: {
       total: units.length, unread: unread.length, read: units.length - unread.length, review: suspicious, suspicious,
       other: unread.filter(i => i.entries.some(e => !e.readAt && e.inspectionResult === 'other')).length,
       uncertain: unread.filter(i => i.entries.some(e => e.inspectionResult === 'other' && e.analysis?.decision === 'uncertain')).length,

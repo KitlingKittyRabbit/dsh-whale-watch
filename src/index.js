@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { Store } from './store.js';
 import { DisabledBrowser } from './disabled-browser.js';
 import { DshModel } from './model.js';
@@ -25,11 +26,17 @@ export async function apply(ctx, config = {}) {
       return handler(req, res);
     } }), 'patrol web panel');
   });
+  // Native scheduling is verified with this host revision. Older supported
+  // hosts keep their patrol preset without requiring a newer host package.
+  const toolsVersion = JSON.parse(await readFile(new URL(import.meta.resolve('@deepseek-ai/dsh-tools/package.json')), 'utf8')).version;
+  const scheduleTools = toolsVersion === '0.2.2-rc.1' && !!ctx.get?.('schedule');
+  engine.capabilities = { schedule: scheduleTools };
   const unregister = await ctx.agentPresets.register({
     id: 'dafeiyu-patrol', name: '鲸声守望', description: '操作工作台：采集、分析、查看结果、管理专题和设置', order: 5,
     plugins: [
       { name: '@deepseek-ai/dsh-persona', config: { prefix: AGENT_PROMPT, suffix: '', complete: false } },
-      { name: fileURLToPath(new URL('./agent.js', import.meta.url)) },
+      { name: fileURLToPath(new URL('./agent.js', import.meta.url)), config: { scheduleTools } },
+      ...(scheduleTools ? [{ name: '@deepseek-ai/dsh-tool-schedule' }] : []),
     ],
   });
   ctx.effect(() => unregister, 'patrol preset');

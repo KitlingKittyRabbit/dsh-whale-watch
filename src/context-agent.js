@@ -1,4 +1,5 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
+import { restrictToPresetTools } from './tool-boundary.js';
 export const name = 'whale-watch-context-builder-tools';
 export const inject = ['tools', 'dafeiyuPatrol'];
 export function apply(ctx) {
@@ -10,4 +11,5 @@ export function apply(ctx) {
   const input = { configJson: { type: 'string', required: true, description: '完整专题JSON文本，format=whale-watch-context，schemaVersion=1' } };
   tool('context_validate', '校验JSON结构、大小、来源编号和字段限制；不验证事实、不启用专题。', input, async args => engine.validateContext(args));
   tool('context_save_draft', '保存已经校验的配置草稿并返回下载地址。不会启用、替换背景或启动巡查；让用户在专题页查看并点击“采用这份配置”。', input, async args => engine.saveContextDraft(args));
+  restrictToPresetTools(ctx, ['context_format', 'context_current', 'context_validate', 'context_save_draft']);
 }

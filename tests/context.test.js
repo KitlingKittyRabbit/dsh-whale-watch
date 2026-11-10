@@ -71,7 +71,7 @@ test('配置导出捕捉当前背景编辑，排除原帖、图片、密钥；�
 });
 test('配置制作助手只有读取、校验、保存草稿；草稿不会启用或启动付费任务', async t => {
   const engine = await fixture(t), registered = [];
-  builderTools({ dafeiyuPatrol: engine, effect: fn => fn(), tools: { register: value => { registered.push(value); return () => {}; } } });
+  builderTools({ dafeiyuPatrol: engine, effect: fn => fn(), tools: { schemas: () => [], restrict: () => () => {}, guard: () => () => {}, register: value => { registered.push(value); return () => {}; } } });
   assert.deepEqual(registered.map(t => t.name), ['context_format', 'context_current', 'context_validate', 'context_save_draft']);
   const tools = Object.fromEntries(registered.map(t => [t.name, t]));
   assert.equal((await tools.context_format.execute({})).format, 'whale-watch-context');

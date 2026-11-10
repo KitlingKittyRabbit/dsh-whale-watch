@@ -8,7 +8,7 @@
 <p>DSH 社区讨论环境巡查插件 · 阅读整篇讨论 · 结合专题语境 · 保留原文与依据</p>
 
 <p>
-  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.9.1"><img src="https://img.shields.io/badge/试用版-0.9.1-b39a68?style=flat-square" alt="试用版 0.9.1"></a>
+  <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/releases/tag/v0.9.2"><img src="https://img.shields.io/badge/试用版-0.9.2-b39a68?style=flat-square" alt="试用版 0.9.2"></a>
   <a href="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml"><img src="https://github.com/KitlingKittyRabbit/dsh-whale-watch/actions/workflows/tests.yml/badge.svg" alt="程序检查状态"></a>
   <a href="docs/TESTED.md"><img src="https://img.shields.io/badge/DSH_Web-0.2.2--rc.1-517d8d?style=flat-square" alt="适配 DSH Web 0.2.2-rc.1、0.2.1-rc.5 和 0.2.0-rc.2"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-517d8d?style=flat-square" alt="MIT 许可证"></a>
@@ -66,7 +66,7 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 
 按宿主提示升级或卸载旧包后重装；若仍显示旧版或入口未更新，再重启 DSH。个人数据保存在插件包目录之外，会继续保留。仓库安装获得默认分支当前版本；安装包对应指定发布版本。
 
-若遇到旧包与 DSH 0.2.2-rc.1 不兼容，请安装 **0.9.1**，其中已包含 0.8.10 的兼容修复，无需添加版本豁免。若重试仍取得旧版，可从 Releases 下载 0.9.1 安装包后安装。
+若遇到旧包与 DSH 0.2.2-rc.1 不兼容，请安装 **0.9.2**，其中已包含 0.8.10 的兼容修复，无需添加版本豁免。若重试仍取得旧版，可从 Releases 下载 0.9.2 安装包后安装。
 
 </details>
 
@@ -95,13 +95,15 @@ https://github.com/KitlingKittyRabbit/dsh-whale-watch
 
 日常操作用第一个，整理专题用第二个。数据密钥在设置表单填写；助手对话和模型任务可能产生调用费用。
 
+DSH Web 0.2.2-rc.1 启用宿主定时服务后，巡查预设可直接创建、查看、修改、暂停及恢复定时任务，并在 DSH「自动化任务」统一管理。每个任务可分别选择关键词、用户、读取范围、数量、额度，以及仅采集或采集后分析，详见[定时巡查](docs/USAGE.md#定时巡查)。
+
 ## 了解更多
 
 | 文档 | 内容 |
 | --- | --- |
 | [使用手册](docs/USAGE.md) | 搜索筛选、专题设置、继续任务、缓存管理、费用与本机数据。 |
 | [专题配置指南](docs/CONTEXT_CONFIG.md) | 背景、术语与语境说明的文件格式，如何导入和分享。 |
-| [版本更新](docs/CHANGELOG.md) | 0.9.1 只看笔记模式，及近期更新。 |
+| [版本更新](docs/CHANGELOG.md) | 0.9.2 接入宿主调度、限制预设工具，及近期更新。 |
 | [实测记录](docs/TESTED.md) | 已验证的安装环境、程序检查和真实模型评估范围。 |
 | [反馈与贡献](CONTRIBUTING.md) | 如何报告误判、漏判和使用问题，如何参与开发。 |
 
@@ -116,7 +118,7 @@ npm test
 npm run pack:plugin
 ```
 
-生成 `artifacts/dsh-dafeiyu-patrol-0.9.1.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
+生成 `artifacts/dsh-dafeiyu-patrol-0.9.2.tgz`，只包含运行代码、界面、公开配置、样例和文档，不包含个人记录或凭据。
 
 `npm run dev` 提供独立界面预览，不调用真实模型。正式工作台通过 DSH 原生侧栏插槽挂载。更多验证说明见[贡献指南](CONTRIBUTING.md)。
 

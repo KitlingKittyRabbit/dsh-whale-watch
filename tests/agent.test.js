@@ -28,7 +28,7 @@ async function fixture(t) {
   const api = { hasKey: true, init: async () => {}, setKey: async key => { keyWrites.push(key); api.hasKey = !!key; },
     async *collect(options) { collection.push(options); yield note(99); } };
   const engine = await new PatrolEngine(new Store(root), {}, model, api).init();
-  const tools = {}; apply({ dafeiyuPatrol: engine, effect: fn => fn(), tools: { register: tool => { tools[tool.name] = tool; return () => {}; } } });
+  const tools = {}; apply({ dafeiyuPatrol: engine, effect: fn => fn(), tools: { schemas: () => [], restrict: () => () => {}, guard: () => () => {}, register: tool => { tools[tool.name] = tool; return () => {}; } } });
   const execute = (name, args = {}) => tools[name].execute(args);
   const finish = async () => { if (engine.active) await engine.active.promise; };
   return { engine, tools, execute, finish, calls, exports, imageReads, collection, keyWrites, ref, catalog, root };

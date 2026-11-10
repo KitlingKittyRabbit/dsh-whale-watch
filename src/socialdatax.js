@@ -5,7 +5,7 @@ import { validateNoteUrl } from './schema.js';
 import { captureImages } from './images.js';
 import { DEFAULT_SEARCH_SETTINGS } from './search-options.js';
 import { alternate, keywordHits, matchesKeywords, matchesUserFilters, userReference } from './user-search.js';
-import { mergeKeywordCandidates, publishedAt, sortCandidates } from './search-results.js';
+import { keywordStopEnabled, mergeKeywordCandidates, publishedAt, sortCandidates } from './search-results.js';
 
 const BASE = 'https://mcp.socialdatax.com/socialdatax/api/v1/xhs';
 const id = z.string().regex(/^[a-f0-9]{24}$/i);
@@ -93,6 +93,7 @@ export class SocialDataX {
     if (!this.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key；不会自动改用浏览器采集');
     const session = { attempts: 0, costCents: 0, unknown: 0, budget: options.apiBudgetYuan, maxRequests: Math.floor(options.apiBudgetYuan * 10 + 1e-8) };
     const excluded = new Set(options.excludedNoteIds || []), reported = new Set(), queued = new Set(), resolvedUsers = new Set(), readNotes = new Set();
+    const stopAt = new Set(options.stopAtNoteIds ?? options.excludedNoteIds ?? []);
     const explicitNotes = new Set(options.urls.map(url => noteId(url) || url));
     const accept = entry => {
       const key = entry.note_id?.toLowerCase() || noteId(entry.note_url);
@@ -112,7 +113,18 @@ export class SocialDataX {
         const found = await source.request(path, { ...params, page_token: token }, schema, session, signal, progress);
         if (keyword !== null) progress({ type: 'search', message: `检索关键词“${keyword}”第${n + 1}页：返回${found.items.length}篇候选` });
         const items = keyword === null ? found.items : sortCandidates(found.items, options.noteSort);
-        for (const row of items) yield keyword === null ? row : { ...row, searchKeyword: keyword };
+        for (const row of items) {
+          const key = row.note_id?.toLowerCase() || noteId(row.note_url || '');
+          if (keyword !== null && keywordStopEnabled(options) && stopAt.has(key)) {
+            // Stop before global deduplication: another keyword may have already
+            // reported this same old ID, but each keyword has its own boundary.
+            if (!reported.has(key)) { reported.add(key); progress({ type: 'excluded', count: 1, message: '已排除查过的笔记' }); }
+            progress({ type: 'seen-stop', keyword, noteId: key, page: n + 1,
+              message: `关键词“${keyword}”遇到历史已采集笔记，已停止该词；本页余项与后续分页不再读取，其他关键词继续` });
+            return;
+          }
+          yield keyword === null ? row : { ...row, searchKeyword: keyword };
+        }
         token = found.next_page_token;
         if (!token) return;
         if (tokens.has(token)) { progress({ type: 'search-limit', message: '候选笔记分页令牌重复，搜索范围未读完' }); return; }

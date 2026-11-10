@@ -13,6 +13,7 @@ import { BUILTIN_DS_CONTEXT, CONTEXT_TEMPLATE, CONTEXT_JSON_SCHEMA, parseContext
 import { discussionUnits, findUnit } from './units.js';
 import { latestCollectionJob, orderCollectionViews } from './collection-view.js';
 import { SEARCH_OPTIONS, searchSummary } from './search-options.js';
+import { keywordStopEnabled } from './search-results.js';
 import { captureComplete, excludedNotes, scopedRecords } from './reading-scope.js';
 
 export class PatrolEngine {
@@ -226,6 +227,7 @@ export class PatrolEngine {
     if (mode === 'scan' && !options.urls.length && !options.users.length && !options.keywords.length) throw new Error('请至少填写关键词、指定用户或笔记链接中的一项');
     if (needsCollection && !this.apiCollector?.hasKey) throw new Error('请先在“规则与设置”填写 SocialDataX API Key，或导入原文进行离线分析');
     const job = { id: randomUUID(), mode, resumeOnlyPending, ...(remainingTargetIds ? { remainingTargetIds: [...remainingTargetIds] } : {}), status: 'running', startedAt: new Date().toISOString(),
+      ...(mode === 'scan' && keywordStopEnabled(options) ? { seenBoundaryIds: [...(resumeScope?.seenBoundaryIds ?? excludedNotes(this.store, options))] } : {}),
       scopeItemIds: resumeScope?.itemIds ? [...resumeScope.itemIds] : null, collectedItemIds: resumeScope?.itemIds ? [...resumeScope.itemIds] : [],
       originalMaxNotes: resumeScope?.originalMaxNotes || options.maxNotes, collectionComplete: false,
       options: { ...options, backgroundContext: undefined }, backgroundId: options.backgroundContext?.id || null, backgroundPlan, backgroundRead: 0, backgroundCached: 0, backgroundCalls: 0, backgroundErrors: 0, searchSummary: searchSummary(options), notesAttempted: 0, notesRead: 0, notesExcluded: 0, notesFiltered: 0, searchLimits: [], skippedNotes: [], collected: 0, analyzed: 0, cached: 0, failed: 0, verificationCalls: 0, quoteRepairCalls: 0, discussionCalls: 0, apiRequests: 0, apiCostCents: 0, apiUnconfirmed: 0, discussionGaps: [], visionRead: 0, visionCached: 0, visionFailed: 0, imagesMissing: 0, messages: [], message: mode === 'background' ? '正在准备背景阅读' : mode === 'scan' ? '正在启动采集' : '正在分析未处理记录' };
@@ -249,6 +251,10 @@ export class PatrolEngine {
       if (event.type === 'excluded') job.notesExcluded += event.count;
       if (event.type === 'filtered') job.notesFiltered += event.count || 1;
       if (event.type === 'search-limit' && !job.searchLimits.includes(message)) job.searchLimits.push(message);
+      if (event.type === 'seen-stop') {
+        job.stoppedKeywords ||= [];
+        if (!job.stoppedKeywords.some(entry => entry.keyword === event.keyword)) job.stoppedKeywords.push({ keyword: event.keyword, noteId: event.noteId, page: event.page });
+      }
       if (event.type === 'skip') job.skippedNotes.push({ url: event.url, code: event.code, reason: event.reason });
       if (event.type === 'api') { job.apiRequests = event.attempts; job.apiCostCents = event.costCents; job.apiUnconfirmed = event.unknown; }
       if (event.type === 'api-stop') job.apiStopReason = event.message;
@@ -401,7 +407,7 @@ export class PatrolEngine {
         const notes = (job.scopeItemIds || []).map(id => this.store.data.items.find(i => i.id === id)).filter(Boolean);
         const completedInThisTask = notes.filter(i => i.kind === 'note' && captureComplete(i, options)).map(i => i.discussionNoteId || /^note:([a-f0-9]{24})$/i.exec(i.sourceKey || '')?.[1]).filter(Boolean);
         const excludedNoteIds = [...new Set([...excludedNotes(this.store, options), ...completedInThisTask])];
-        for await (const record of this.collectRecords({ ...options, excludedNoteIds }, signal, progress)) {
+        for await (const record of this.collectRecords({ ...options, excludedNoteIds, stopAtNoteIds: job.seenBoundaryIds }, signal, progress)) {
           job.collected++; if (record.kind === 'note') { job.notesRead++; if (record.discussion && !record.discussion.complete) job.discussionGaps.push({ title: record.title, limitations: record.discussion.limitations }); }
           const item = await this.store.upsert(record, { persist: options.collectionSource !== 'socialdatax' });
           notes.push(item);
@@ -412,7 +418,8 @@ export class PatrolEngine {
         for (const note of notes) await processDiscussion(note);
         if (job.collected === 0 && !notes.length && !job.skippedNotes.length) {
           job.status = job.searchLimits.length || job.apiStopReason ? 'partial' : 'completed';
-          progress(`本次已检查范围内没有发现新笔记（符合筛选条件）：已排除 ${job.notesExcluded} 篇查过的笔记，筛除 ${job.notesFiltered} 篇。${[job.apiStopReason, ...job.searchLimits].filter(Boolean).join('；') || '可调整用户、关键词或搜索条件。'}`); return;
+          const stopped = job.stoppedKeywords?.length ? `${job.stoppedKeywords.length}个关键词已按遇旧即停结束。` : '';
+          progress(`本次已检查范围内没有发现新笔记（符合筛选条件）：已排除 ${job.notesExcluded} 篇查过的笔记，筛除 ${job.notesFiltered} 篇。${stopped}${[job.apiStopReason, ...job.searchLimits].filter(Boolean).join('；') || (stopped ? '' : '可调整用户、关键词或搜索条件。')}`); return;
         }
         if (job.collected === 0 && !notes.length) throw new Error(`检查 ${job.notesAttempted} 篇，未读到可分析内容，${job.skippedNotes.length} 篇未读取。请查看漏采原因，或在 App 中复制原文导入。`);
       } else {
@@ -422,7 +429,7 @@ export class PatrolEngine {
       }
       job.status = job.skippedNotes.length || job.failed || job.imagesMissing || job.discussionGaps.length || job.apiStopReason || job.searchLimits.length || job.analysisDeferred ? 'partial' : 'completed';
       const deferred = job.analysisDeferred ? '达到本轮按篇分析上限，剩余篇目可继续分析。' : '';
-      const coverage = mode === 'scan' ? `排除已查 ${job.notesExcluded} 篇；筛除 ${job.notesFiltered} 篇；检查 ${job.notesAttempted} 篇，读到 ${job.notesRead} 篇，${job.skippedNotes.length} 篇未读取。` : '';
+      const coverage = mode === 'scan' ? `排除已查 ${job.notesExcluded} 篇；筛除 ${job.notesFiltered} 篇；检查 ${job.notesAttempted} 篇，读到 ${job.notesRead} 篇，${job.skippedNotes.length} 篇未读取。${job.stoppedKeywords?.length ? `遇旧停止${job.stoppedKeywords.length}个关键词。` : ''}` : '';
       progress(`${job.status === 'partial' ? '部分完成' : '完成'}：${coverage}${deferred}整篇分析 ${discussionsUsed} 篇；采集 ${job.collected} 条，分析 ${job.analyzed} 条，复用 ${job.cached} 条，失败 ${job.failed} 条；疑似问题证据核对 ${job.verificationCalls} 次；引文修复 ${job.quoteRepairCalls} 次；配图读取 ${job.visionRead} 篇、复用 ${job.visionCached} 篇、失败 ${job.visionFailed} 篇、不完整 ${job.imagesMissing} 篇。`);
     } catch (error) {
       job.status = signal.aborted ? 'cancelled' : error instanceof NeedsAttention ? 'paused' : 'failed';
@@ -609,18 +616,18 @@ export class PatrolEngine {
     if (!job || !(['paused', 'cancelled', 'interrupted'].includes(job.status) || job.status === 'partial' && job.analysisDeferred)) throw new Error('没有可继续的已停止、暂停或达到分析篇数上限的任务');
     if (job.mode === 'background') throw new Error('旧背景阅读已停用，请到专题页编辑资料或让 AI 制作配置');
     if (job.mode === 'evaluate') throw new Error('评估任务请到“示例评估”重新运行');
-    const { keywords, users, userKeywordMode, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, readComments, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort, publishTimeRange, noteType, commentSort } = job.options;
-    const options = { urls: urls || [], keywords: keywords || [], users: users || [], userKeywordMode: userKeywordMode || 'and', maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, readImages, readComments: readComments !== false, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort: noteSort || 'time_descending', publishTimeRange: publishTimeRange || 'all', noteType: noteType || 'all', commentSort: commentSort || 'default' };
+    const { keywords, users, userKeywordMode, urls, maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, stopOnSeen, readImages, readComments, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort, publishTimeRange, noteType, commentSort } = job.options;
+    const options = { urls: urls || [], keywords: keywords || [], users: users || [], userKeywordMode: userKeywordMode || 'and', maxNotes, maxComments, maxAnalysis, analyze, excludeSeen, stopOnSeen: stopOnSeen ?? false, readImages, readComments: readComments !== false, maxImagesPerNote, maxVision, backgroundExpanded, collectionSource, apiBudgetYuan, discussionAnalysisLimit, discussionNoteLimit, noteSort: noteSort || 'time_descending', publishTimeRange: publishTimeRange || 'all', noteType: noteType || 'all', commentSort: commentSort || 'default' };
     // Stopped scans may already have saved records that their seen-note cache would skip.
     let mode = job.mode === 'scan' && job.status !== 'paused' && analyze && this.state().counts.pending > 0 ? 'analyze' : job.mode;
     let resumeScope = job.scopeItemIds ? { itemIds: job.scopeItemIds, originalMaxNotes: job.originalMaxNotes } : null;
-    if (job.mode === 'scan' && (users?.length || readComments === false) && Array.isArray(job.collectedItemIds)) {
+    if (job.mode === 'scan' && (users?.length || readComments === false || stopOnSeen) && Array.isArray(job.collectedItemIds)) {
       const completed = job.collectedItemIds.map(id => this.store.data.items.find(i => i.id === id)).filter(i => i?.kind === 'note' && captureComplete(i, options)).length;
       const originalMaxNotes = job.originalMaxNotes || maxNotes;
       const remaining = originalMaxNotes - completed;
       mode = job.collectionComplete || remaining <= 0 ? 'analyze' : 'scan';
       if (mode === 'scan') options.maxNotes = Math.max(1, remaining);
-      resumeScope = { itemIds: job.collectedItemIds, originalMaxNotes };
+      resumeScope = { itemIds: job.collectedItemIds, originalMaxNotes, ...(job.seenBoundaryIds ? { seenBoundaryIds: job.seenBoundaryIds } : {}) };
     }
     let remainingTargetIds = job.remainingTargetIds;
     if (mode.startsWith('item:') && !Array.isArray(remainingTargetIds)) {

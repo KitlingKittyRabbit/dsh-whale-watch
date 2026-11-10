@@ -192,7 +192,8 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const [draft, setDraft] = useState(null), [keywords, setKeywords] = useState(''), [urls, setUrls] = useState('');
     const [users, setUsers] = useState(''), [userKeywordMode, setUserKeywordMode] = useState('and');
     const [readComments, setReadComments] = useState(true);
-    const searchScope = () => ({ keywords: split(keywords), users: users.split('\n').map(s => s.trim()).filter(Boolean), userKeywordMode, readComments });
+    const [stopOnSeen, setStopOnSeen] = useState(false);
+    const searchScope = () => ({ keywords: split(keywords), users: users.split('\n').map(s => s.trim()).filter(Boolean), userKeywordMode, readComments, stopOnSeen });
     const [searchDraft, setSearchDraft] = useState({});
     const [collectOnly, setCollectOnly] = useState(false), [excludeSeen, setExcludeSeen] = useState(true);
     const collectionSource = 'socialdatax'; const [dataKey, setDataKey] = useState('');
@@ -206,7 +207,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
       setState(next);
       if (batch === 'latest' && records.batch === 'all') setBatch('all');
       if (offset > 0 && records.total <= offset) { setOffset(Math.max(0, Math.floor((records.total - 1) / 20) * 20)); } else setResults(records);
-      if (!initialized.current) { initialized.current = true; setDraft(next.settings); setSearchDraft(searchValues(next.settings, next.searchOptions)); setKeywords(next.settings.keywords.join('，')); setUsers((next.settings.users || []).join('\n')); setUserKeywordMode(next.settings.userKeywordMode || 'and'); setReadComments(next.settings.readComments !== false); }
+      if (!initialized.current) { initialized.current = true; setDraft(next.settings); setSearchDraft(searchValues(next.settings, next.searchOptions)); setKeywords(next.settings.keywords.join('，')); setUsers((next.settings.users || []).join('\n')); setUserKeywordMode(next.settings.userKeywordMode || 'and'); setReadComments(next.settings.readComments !== false); setStopOnSeen(!!next.settings.stopOnSeen); }
     }, [filter, batch, offset]);
     useEffect(() => {
       const controller = new AbortController(); lifecycle.current = controller;
@@ -323,6 +324,8 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Hint, null, '用户列表按接口顺序读取，笔记排序只作用于关键词搜索；用户笔记的时间和类型在本地筛选，半年按近183天计算。每个用户／关键词最多查找5页候选，未读完会提示。'),
               h('details', null, h('summary', null, '或指定笔记链接'), h(Field, { label: '每行一个链接' }, h('textarea', { value: urls, onChange: e => setUrls(e.target.value), rows: 3, placeholder: '小红书笔记或分享链接' }))),
               h('label', null, h('input', { type: 'checkbox', checked: excludeSeen, onChange: e => setExcludeSeen(e.target.checked) }), ' 排除已查过的笔记'),
+              h('label', null, h('input', { type: 'checkbox', checked: stopOnSeen, disabled: busy || running || !excludeSeen || !!urls.trim() || !split(keywords).length || !!users.trim() && userKeywordMode !== 'or', onChange: e => setStopOnSeen(e.target.checked) }), ' 关键词遇旧即停'),
+              h(Hint, null, '开启后，每个关键词首次遇到历史已采集笔记就结束该词，本页余项和后续页不再检查；其他词独立继续，不强求凑满篇数。关闭则跳过旧帖继续查找。已请求的搜索页仍计费；仅对勾选“排除已查”的关键词检索生效。'),
               h(Hint, null, '按笔记编号跨任务去重，只读新笔记。要更新旧帖正文或新评论，请取消勾选。未读成功的笔记仍会重试。'),
               h('div', { className: 'patrol-actions' }, h('span', { className: 'patrol-meta' }, `已查缓存：${state.seenCache?.count || 0} 篇`),
                 h(Button, { disabled: busy || running || !state.seenCache?.count, onClick: () => act('/cache/clear') }, '清空已查缓存'),
@@ -397,12 +400,12 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Field, { label: '判断规则' }, h('textarea', { value: draft.rules, onChange: updateDraft('rules'), rows: 16, required: true, minLength: 20, maxLength: 12000 }))),
             h(Button, { type: 'submit', primary: true, disabled: busy || running }, '保存设置')),
           tab === 'topic' && h(Topic, { context: state.context, busy, running, act, openBuilder })),
-        h('footer', { className: 'patrol-footer' }, '鲸声守望 0.9.3（实验版） · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
+        h('footer', { className: 'patrol-footer' }, '鲸声守望 0.9.4（实验版） · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
   }
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout', 'sessions', 'remote', 'remote.agentPresets', 'uiWorkspace'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.9.3-desk8';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.9.4-desk8';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,

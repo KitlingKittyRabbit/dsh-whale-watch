@@ -20,6 +20,7 @@ const userParameters = {
   users: { type: 'array', items: { type: 'string' }, description: '最多5个小红书完整主页链接或24位用户ID，不接受昵称或小红书号；空数组不限定用户' },
   userKeywordMode: { type: 'string', enum: USER_KEYWORD_MODES.map(([value]) => value), description: 'and=指定用户发布的笔记标题或正文包含任一关键词；or=用户笔记与全站关键词搜索结果合并去重。仅一组条件时单独使用该组。筛选也可能产生数据费' },
 };
+const stopOnSeenParameter = { type: 'boolean', description: '关键词遇旧即停：true在每个关键词首次遇到任务开始前已采集的笔记时结束该词，不再取本页余项或后续分页；其他词独立继续。需excludeSeen=true，指定用户列表及指定链接不适用。false跳过旧帖继续找新帖；省略沿用设置' };
 async function configInput(args) {
   if (!!args.configJson === !!args.filePath) throw new Error('请提供 configJson 或 filePath 中的一项');
   if (!args.filePath) return { ...args, configJson: args.configJson };
@@ -44,6 +45,7 @@ export function apply(ctx, config = {}) {
     keywords: { type: 'array', items: { type: 'string' }, description: '最多5个关键词，多个词任一命中；只传users时默认不限制关键词，两者都省略才使用默认范围' },
     urls: { type: 'array', items: { type: 'string' }, description: '小红书笔记链接；提供时默认只采集这些链接' },
     excludeSeen: { type: 'boolean', description: '默认true，跳过历史成功采集的笔记；false可更新正文和新评论' },
+    stopOnSeen: stopOnSeenParameter,
     analyze: { type: 'boolean', description: 'false只采集、不调用模型；默认true' },
     maxNotes: { type: 'integer', description: '1到30，整轮总篇数' },
     maxAnalysis: { type: 'integer', description: '1到100，仅用于单独导入及示例评估的分析条数上限' },
@@ -67,6 +69,7 @@ export function apply(ctx, config = {}) {
   tool('patrol_models', '读取宿主可用模型及图片能力，用于设置分析模型和看图模型；不调用模型推理。', {}, async () => engine.model.catalog());
   tool('patrol_settings', '只修改用户明确指定的默认设置；未提供的字段保留。模型服务及型号必须成对传入，均为空表示跟随默认。规则修改不重算旧结论，不自行提高预算。密钥不能通过本工具传入。', {
     ...searchParameters, ...userParameters, ...limits,
+    stopOnSeen: stopOnSeenParameter,
     keywords: { type: 'array', items: { type: 'string' }, description: '0到5个默认搜索词；只按用户读取时设为空数组' },
     apiBudgetYuan: { type: 'number', description: '数据额度0.1到100元，仅按用户要求更改' },
     provider: { type: 'string', description: 'patrol_models中的服务id' }, model: { type: 'string', description: '对应模型id' },

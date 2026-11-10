@@ -45,6 +45,17 @@ test('巡查工具沿用全部搜索选项，采集不分析；单独分析不�
   assert.equal(f.collection.length, 1); assert.equal(f.engine.state().counts.pending, 0);
 });
 
+test('巡查预设可启用遇旧即停、沿用默认或单轮关闭，保存不改判断规则或启动采集', async t => {
+  const f = await fixture(t), rules = f.engine.store.data.settings.rules;
+  for (const name of ['patrol_start', 'patrol_settings']) assert.equal(f.tools[name].parameters.properties.stopOnSeen.type, 'boolean');
+  await f.execute('patrol_settings', { stopOnSeen: true });
+  assert.equal(f.engine.store.data.settings.stopOnSeen, true); assert.equal(f.engine.store.data.settings.rules, rules);
+  assert.equal(f.collection.length, 0); assert.equal(f.calls.length, 0);
+  await f.execute('patrol_start', { analyze: false }); await f.finish(); assert.equal(f.collection[0].stopOnSeen, true);
+  await f.execute('patrol_start', { analyze: false, stopOnSeen: false }); await f.finish(); assert.equal(f.collection[1].stopOnSeen, false);
+  assert.equal(f.engine.store.data.settings.stopOnSeen, true);
+});
+
 test('巡查助手可指定用户及且或关系，单轮只给用户不附加默认关键词', async t => {
   const f = await fixture(t), users = ['111111111111111111111111'];
   assert.deepEqual(f.tools.patrol_start.parameters.properties.userKeywordMode.enum, ['and', 'or']);

@@ -35,12 +35,13 @@ function fillModels() {
   for (const model of selected?.models || []) { const option = el('option', model.name || model.id); option.value = model.id; $('model').append(option); }
   $('model').disabled = !provider;
 }
-function searchSelection() { return Object.fromEntries(Object.keys(state.searchOptions || {}).map(key => [key, $('search-' + key).value])); }
+function searchSelection() { return { ...Object.fromEntries(Object.keys(state.searchOptions || {}).map(key => [key, $('search-' + key).value])), stopOnSeen: $('stop-on-seen').checked }; }
 const readingComments = () => $('reading-scope').value !== 'note';
 function scopeSelection() { return { keywords: split($('keywords').value), users: $('users').value.split('\n').map(s => s.trim()).filter(Boolean), userKeywordMode: $('user-keyword-mode').value, readComments: readingComments() }; }
 function scopeControls() {
   const { users, keywords, userKeywordMode } = scopeSelection(), urls = !!$('urls').value.trim();
   $('reading-scope').disabled = !!state?.activeJob;
+  $('stop-on-seen').disabled = !!state?.activeJob || !$('exclude-seen').checked || urls || !keywords.length || !!users.length && userKeywordMode !== 'or';
   $('reading-scope-hint').textContent = readingComments() ? '' : '只采集笔记标题、正文与配图，分析也不使用评论。已有评论保留；上方统计仍包含已保存评论。保存范围为默认后刷新也会保留。';
   $('analyze').textContent = readingComments() ? '分析未阅讨论' : '分析未阅笔记';
   if (state?.settings) {
@@ -64,6 +65,7 @@ function settingsForm() {
   searchForm();
   $('keywords').value = s.keywords.join('，');
   $('reading-scope').value = s.readComments === false ? 'note' : 'discussion';
+  $('stop-on-seen').checked = !!s.stopOnSeen;
   $('users').value = (s.users || []).join('\n'); $('user-keyword-mode').value = s.userKeywordMode || 'and'; scopeControls();
   for (const key of ['maxNotes', 'maxComments', 'maxAnalysis', 'rules']) $(key).value = s[key];
   $('provider').value = s.provider; fillModels();
@@ -224,7 +226,7 @@ $('clear-data-key').addEventListener('click', () => action($('clear-data-key'), 
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => { tab(button.dataset.tab); if (activeTab === 'results') refreshResults(true).catch(e => notice(e.message, true)); }));
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { filter = button.dataset.filter; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b === button)); refreshResults(true).catch(e => notice(e.message, true)); }));
 $('result-batch').addEventListener('change', () => { batch = $('result-batch').value; offset = 0; refreshResults(true).catch(e => notice(e.message, true)); });
-for (const id of ['users', 'keywords', 'urls', 'user-keyword-mode']) $(id).addEventListener('input', scopeControls);
+for (const id of ['users', 'keywords', 'urls', 'user-keyword-mode', 'exclude-seen']) $(id).addEventListener('input', scopeControls);
 $('reading-scope').addEventListener('change', () => { scopeControls(); if (state) refreshResults(true).catch(e => notice(e.message, true)); });
 $('save-search-options').addEventListener('click', () => action($('save-search-options'), '/settings', { ...state.settings, ...searchSelection(), ...scopeSelection() }));
 $('start').addEventListener('click', () => { const urls = $('urls').value.split('\n').map(s => s.trim()).filter(Boolean); action($('start'), '/start', { ...(urls.length ? { urls } : scopeSelection()), analyze: !$('collect-only').checked, excludeSeen: $('exclude-seen').checked, ...searchSelection() }); });

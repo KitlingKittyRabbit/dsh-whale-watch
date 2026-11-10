@@ -4,6 +4,10 @@ export const SORT_FIELDS = {
   time_descending: 'publish_time', like_count_descending: 'like_count',
   comment_count_descending: 'comment_count', collect_count_descending: 'collect_count',
 };
+export function keywordStopEnabled(options) {
+  return options.stopOnSeen === true && options.excludeSeen !== false && !options.urls?.length &&
+    options.keywords?.length > 0 && (!options.users?.length || options.userKeywordMode === 'or');
+}
 const rank = (item, field) => Number.isFinite(item[field]) && item[field] >= 0 ? item[field] : -1;
 export function sortCandidates(items, sort) {
   const field = SORT_FIELDS[sort];

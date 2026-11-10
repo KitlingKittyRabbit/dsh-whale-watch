@@ -4,7 +4,8 @@ import { z } from 'zod';
 import { validateNoteUrl } from './schema.js';
 import { captureImages } from './images.js';
 import { DEFAULT_SEARCH_SETTINGS } from './search-options.js';
-import { alternate, matchesKeywords, matchesUserFilters, userReference } from './user-search.js';
+import { alternate, keywordHits, matchesKeywords, matchesUserFilters, userReference } from './user-search.js';
+import { mergeKeywordCandidates, publishedAt, sortCandidates } from './search-results.js';
 
 const BASE = 'https://mcp.socialdatax.com/socialdatax/api/v1/xhs';
 const id = z.string().regex(/^[a-f0-9]{24}$/i);
@@ -101,11 +102,17 @@ export class SocialDataX {
       queued.add(identity); return true;
     };
     const filtered = message => progress({ type: 'filtered', count: 1, message });
-    const pages = async function* (source, path, params, schema) {
+    const pages = async function* (source, path, params, schema, keyword = null) {
       let token = ''; const tokens = new Set();
       for (let n = 0; n < 5; n++) {
+        if (keyword !== null && session.maxRequests - session.attempts < 2) {
+          progress({ type: 'search-limit', message: `剩余额度需保留给笔记正文，关键词“${keyword}”${n ? '后续分页' : ''}尚未检索` });
+          return;
+        }
         const found = await source.request(path, { ...params, page_token: token }, schema, session, signal, progress);
-        for (const row of found.items) yield row;
+        if (keyword !== null) progress({ type: 'search', message: `检索关键词“${keyword}”第${n + 1}页：返回${found.items.length}篇候选` });
+        const items = keyword === null ? found.items : sortCandidates(found.items, options.noteSort);
+        for (const row of items) yield keyword === null ? row : { ...row, searchKeyword: keyword };
         token = found.next_page_token;
         if (!token) return;
         if (tokens.has(token)) { progress({ type: 'search-limit', message: '候选笔记分页令牌重复，搜索范围未读完' }); return; }
@@ -124,10 +131,9 @@ export class SocialDataX {
         yield { ...row, expectedUserId: userId };
       }
     };
-    const keywordCandidates = async function* (source) {
-      for (const keyword of options.keywords) yield* pages(source, '/note/search', { keyword, sort_type: options.noteSort,
-        publish_time_range: options.publishTimeRange, note_type: options.noteType }, search);
-    };
+    const keywordCandidates = source => mergeKeywordCandidates(options.keywords.map(keyword =>
+      pages(source, '/note/search', { keyword, sort_type: options.noteSort,
+        publish_time_range: options.publishTimeRange, note_type: options.noteType }, search, keyword)), options.noteSort);
     const source = this;
     const eligible = async function* (entries) {
       for await (const entry of entries) {
@@ -217,6 +223,10 @@ export class SocialDataX {
             parentMissing: !!row.parent_comment_id && !parent, unsupportedMedia: row.content_type === 'voice', discussionIncomplete: !complete } });
       }
       const note = { kind: 'note', sourceKey: `note:${key}`, discussionNoteId: key, text: data.content.slice(0, 15000), title: data.title, author: data.author?.name || '', authorId: data.author?.user_id || '', url, context: '', images,
+        publishedAt: publishedAt(data.publish_time) || publishedAt(entry.publish_time),
+        collection: { source: entry.searchKeyword !== undefined ? 'keyword' : entry.expectedUserId ? 'user' : 'url',
+          query: entry.searchKeyword ?? null, keywords: [...options.keywords], matchedKeywords: keywordHits(data, options.keywords),
+          noteSort: options.noteSort, publishTimeRange: options.publishTimeRange },
         discussion: { ...(options.readComments === false ? { scope: 'note' } : {}), sourceKeys: comments.map(c => c.sourceKey), complete, limitations: limits, reportedComments: totalReported, commentsRead: rows.size, commentPages, replyPages, fetchedAt: new Date().toISOString() },
         coverage: { source: 'socialdatax', imageCount: sources.length, imagesUnread: sources.length > 0, textTruncated: data.content.length > 15000,
           discussionIncomplete: !complete, unsupportedMedia: data.note_type === 'video' } };

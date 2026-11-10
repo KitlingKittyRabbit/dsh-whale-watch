@@ -11,6 +11,7 @@ import { communityBackgroundInfo } from './community-background.js';
 import { discussionHash, discussionBatches } from './discussion.js';
 import { BUILTIN_DS_CONTEXT, CONTEXT_TEMPLATE, CONTEXT_JSON_SCHEMA, parseContext, loadedContext, topicInput, createConfigBackground, exportContext, contextView } from './topic-context.js';
 import { discussionUnits, findUnit } from './units.js';
+import { latestCollectionJob, orderCollectionViews } from './collection-view.js';
 import { SEARCH_OPTIONS, searchSummary } from './search-options.js';
 import { captureComplete, excludedNotes, scopedRecords } from './reading-scope.js';
 
@@ -44,7 +45,7 @@ export class PatrolEngine {
       noteId: unit.note?.id || null, readAt: read ? representative.readAt || entries[0].readAt : null,
       inspectionResult, analysisStale: entries.some(i => i.analysisStale), discussionSummary: summary };
   }
-  unitViews() { return discussionUnits(this.store.data.items).map(unit => this.unitView(unit)); }
+  unitViews() { return orderCollectionViews(discussionUnits(this.store.data.items).map(unit => this.unitView(unit)), this.store.data.jobs); }
   assertAnalysisCacheIdle() {
     if (this.analysisCacheMutation) throw new Error('正在更新旧结论缓存，请稍后再试');
     if (this.recordsMutation) throw new Error('正在更新记录，请稍后再试');
@@ -87,14 +88,19 @@ export class PatrolEngine {
     collection: { canClear: !!data.items.length || !!data.seenCache.ids.length || data.jobs.some(j => j.mode === 'scan' || j.mode === 'analyze' || j.mode?.startsWith('item:')), canRestore: !!data.collectionTrash, backupRecords: data.collectionTrash?.items?.length || 0, clearedAt: data.collectionTrash?.clearedAt || null },
     background: { enabled: data.background.enabled, activeId: data.background.active?.id || null, articlesRead: data.background.active?.readings.length || 0 }, browserOpen: false, browserEnabled: false, activeJob: this.active?.job.id || null };
   }
-  results({ filter = 'all', limit = 50, offset = 0 } = {}) {
+  results({ filter = 'all', batch = 'all', limit = 50, offset = 0 } = {}) {
     const archive = filter === 'read' || filter === 'reviewed';
-    const items = this.unitViews().filter(item => archive ? !!item.readAt : !item.readAt &&
+    const job = batch === 'latest' ? latestCollectionJob(this.store.data.jobs) : null;
+    const ids = job ? new Set(job.collectedItemIds) : null;
+    const scoped = this.unitViews().filter(item => !ids || item.entries.some(entry => ids.has(entry.id)));
+    const items = scoped.filter(item => archive ? !!item.readAt : !item.readAt &&
       (filter === 'all' || filter === 'unread' || (filter === 'unanalyzed' ? item.entries.some(e => !e.readAt && !e.inspectionResult) :
         filter === 'suspicious' || filter === 'review' ? item.inspectionResult === 'suspicious' :
         filter === 'other' || filter === 'normal' ? item.entries.some(e => !e.readAt && e.inspectionResult === 'other') :
         filter === 'uncertain' && item.entries.some(e => e.inspectionResult === 'other' && e.analysis?.decision === 'uncertain'))));
-    return { total: items.length, unit: 'discussion', items: items.slice(offset, offset + limit) };
+    return { total: items.length, unit: 'discussion', batch: job ? 'latest' : 'all', scopeTotal: scoped.length,
+      batchInfo: job ? { id: job.id, startedAt: job.startedAt, notes: scoped.length } : null,
+      items: items.slice(offset, offset + limit) };
   }
   evaluation() { return this.store.data.evaluation || null; }
   async clearSeenCache() {

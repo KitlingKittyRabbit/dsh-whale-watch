@@ -4,6 +4,16 @@ import { createServer } from 'node:http';
 import { createHandler } from '../src/http.js';
 import { PatrolEngine } from '../src/engine.js';
 
+test('结果接口传递最近采集批次和分页，未指定时兼容全部记录', async t => {
+  const calls = [];
+  const server = createServer(createHandler({ results: args => { calls.push(args); return { total: 0, items: [] }; } }));
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => server.close(resolve)));
+  const base = `http://127.0.0.1:${server.address().port}/plugins/dafeiyu-patrol/api/results`;
+  assert.equal((await fetch(base + '?batch=latest&filter=unanalyzed&offset=20&limit=20')).status, 200);
+  assert.deepEqual(calls[0], { batch: 'latest', filter: 'unanalyzed', offset: 20, limit: 20 });
+  await fetch(base); assert.equal(calls[1].batch, 'all');
+});
+
 test('面板写入拒绝跨站和无来源请求；正常同源请求可保存复核', async t => {
   let writes = 0;
   const handler = createHandler({ state: () => ({ ok: true }), review: async data => { writes++; return data; } });

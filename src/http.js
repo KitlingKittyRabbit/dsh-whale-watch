@@ -61,7 +61,7 @@ export function createHandler(engine) {
         if (route === '/api/models') return send(res, 200, await engine.model.catalog());
         if (route === '/api/background') return send(res, 200, engine.background());
         if (route === '/api/evaluation') return send(res, 200, engine.evaluation());
-        if (route === '/api/results') return send(res, 200, engine.results({ filter: url.searchParams.get('filter') || 'all', limit: Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 50)), offset: Math.max(0, Number(url.searchParams.get('offset')) || 0) }));
+        if (route === '/api/results') return send(res, 200, engine.results({ filter: url.searchParams.get('filter') || 'all', batch: url.searchParams.get('batch') === 'latest' ? 'latest' : 'all', limit: Math.max(1, Math.min(100, Number(url.searchParams.get('limit')) || 50)), offset: Math.max(0, Number(url.searchParams.get('offset')) || 0) }));
         if (route === '/api/export') {
           res.setHeader('content-disposition', 'attachment; filename="dafeiyu-patrol-results.json"');
           return send(res, 200, engine.exportRecords());

@@ -2,7 +2,7 @@ const BASE = '/plugins/dafeiyu-patrol/api';
 const $ = id => document.getElementById(id);
 const requestedTab = new URLSearchParams(location.search).get('tab');
 const initialTab = requestedTab === 'topic' ? 'context' : requestedTab;
-let state, catalog, filter = 'all', offset = 0, total = 0, activeTab = ['results', 'context', 'settings'].includes(initialTab) ? initialTab : 'results', lastResults = '', initialized = false;
+let state, catalog, filter = 'all', batch = 'latest', offset = 0, total = 0, activeTab = ['results', 'context', 'settings'].includes(initialTab) ? initialTab : 'results', lastResults = '', initialized = false;
 let topicEditing = null, materialHash = null, topicLoading = false;
 let actionBusy = false;
 const pageSize = 20;
@@ -130,13 +130,15 @@ async function refresh() {
   if (activeTab === 'results') await refreshResults();
 }
 async function refreshResults(force = false) {
-  const result = await api(`/results?filter=${filter}&limit=${pageSize}&offset=${offset}`);
+  const result = await api(`/results?filter=${filter}&batch=${batch}&limit=${pageSize}&offset=${offset}`);
+  if (batch === 'latest' && result.batch === 'all') { batch = 'all'; $('result-batch').value = batch; }
   const serialized = JSON.stringify(result);
   if (!force && serialized === lastResults) return;
   // Preserve unfinished review notes while background progress changes.
   if (!force && document.activeElement?.classList.contains('review-note')) return;
   lastResults = serialized; total = result.total;
   $('result-total').textContent = `${total} 篇`;
+  $('batch-hint').textContent = result.batchInfo ? `下方仅显示 ${new Date(result.batchInfo.startedAt).toLocaleString('zh-CN')} 这一轮采集，共 ${result.scopeTotal} 篇；上方统计包含全部历史记录。` : '下方显示全部保存记录，包含历次采集及手动导入。上方统计包含全部历史记录。';
   $('results').replaceChildren();
   if (!result.items.length) {
     const empty = el('div', undefined, 'empty');
@@ -148,14 +150,21 @@ async function refreshResults(force = false) {
   $('prev').disabled = offset === 0; $('next').disabled = offset + pageSize >= total;
   $('page-number').textContent = `${Math.floor(offset / pageSize) + 1} / ${Math.max(1, Math.ceil(total / pageSize))}`;
 }
+function recordMetadata(item) {
+  const stamp = value => value ? new Date(value).toLocaleString('zh-CN') : '';
+  const lines = [`${item.kind === 'comment' ? '' : `发布：${stamp(item.publishedAt) || '未保存'} · `}采集：${stamp(item.capturedAt) || '未记录'}`];
+  if (item.collection?.keywords?.length) lines.push(`${item.collection.query ? `检索词：${item.collection.query} · ` : ''}标题／正文字面命中：${item.collection.matchedKeywords?.join('、') || '未见命中'}（含正文内话题）`);
+  return lines.map(line => el('p', line, 'card-meta'));
+}
 function card(item, embedded = false) {
   if (item.kind === 'discussion') return discussionCard(item);
   const analysis = item.analysis;
   const card = el('article', undefined, 'card ' + (analysis?.decision || ''));
   const head = el('div', undefined, 'card-head');
   const info = el('div'); info.append(el('h3', item.title || '无标题'));
-  info.append(el('div', `${item.kind === 'comment' ? '评论' : '笔记'} · ${item.author || (item.coverage?.source === 'manual' ? '手动导入' : '作者未读取')} · ${new Date(item.capturedAt).toLocaleString('zh-CN')}`, 'card-meta'));
+  info.append(el('div', `${item.kind === 'comment' ? '评论' : '笔记'} · ${item.author || (item.coverage?.source === 'manual' ? '手动导入' : '作者未读取')}`, 'card-meta'));
   head.append(info, el('span', analysis ? (item.analysisStale || item.analysisError ? '旧结论 · ' : '') + names[analysis.decision] : '未做模型分析', 'badge')); card.append(head);
+  card.append(...recordMetadata(item));
   card.append(el('div', item.text || '没有读取到文字；这可能是一篇图片笔记。', 'raw'));
   if (item.url) {
 
@@ -179,6 +188,7 @@ function card(item, embedded = false) {
 function discussionCard(item) {
   const node = el('article', undefined, 'card');
   node.append(el('h3', item.title), el('span', item.inspectionResult === 'suspicious' ? '可疑' : item.inspectionResult === 'other' ? '其它' : '待分析', 'badge'));
+  node.append(...recordMetadata(item));
   node.append(el('p', `一篇笔记＋${item.discussionSummary.commentsRead}条已保存评论 · 可疑${item.discussionSummary.suspicious}条 · 其它${item.discussionSummary.other}条 · 待分析${item.discussionSummary.pending}条`));
   const pending = item.entries.filter(i => !i.readAt && !i.inspectionResult);
   const failed = pending.filter(i => i.analysisError).length;
@@ -202,7 +212,9 @@ async function action(button, path, data = {}) {
   if (['/start', '/analyze', '/analyze/item', '/read'].includes(path)) data = { readComments: readingComments(), ...data };
   if (path.startsWith('/analysis-cache/') && (actionBusy || state?.activeJob || !state?.analysisCache || path.endsWith('/clear') && !state.analysisCache.count || path.endsWith('/restore') && !state.analysisCache.canRestore)) return;
   actionBusy = true; button.disabled = true; analysisCacheControls();
-  try { const result = await api(path, data); if (path === '/data-key') $('data-key').value = ''; notice(result.message || '操作完成'); await refresh(); }
+  try { const result = await api(path, data); if (path === '/data-key') $('data-key').value = '';
+    if (path === '/start') { batch = 'latest'; $('result-batch').value = batch; offset = 0; }
+    notice(result.message || '操作完成'); await refresh(); }
   catch (error) { notice(error.message, true); }
   finally { actionBusy = false; button.disabled = false; analysisCacheControls(); }
 }
@@ -211,6 +223,7 @@ $('data-key-form').addEventListener('submit', async event => { event.preventDefa
 $('clear-data-key').addEventListener('click', () => action($('clear-data-key'), '/data-key', { apiKey: '' }));
 document.querySelectorAll('[data-tab]').forEach(button => button.addEventListener('click', () => { tab(button.dataset.tab); if (activeTab === 'results') refreshResults(true).catch(e => notice(e.message, true)); }));
 document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { filter = button.dataset.filter; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b === button)); refreshResults(true).catch(e => notice(e.message, true)); }));
+$('result-batch').addEventListener('change', () => { batch = $('result-batch').value; offset = 0; refreshResults(true).catch(e => notice(e.message, true)); });
 for (const id of ['users', 'keywords', 'urls', 'user-keyword-mode']) $(id).addEventListener('input', scopeControls);
 $('reading-scope').addEventListener('change', () => { scopeControls(); if (state) refreshResults(true).catch(e => notice(e.message, true)); });
 $('save-search-options').addEventListener('click', () => action($('save-search-options'), '/settings', { ...state.settings, ...searchSelection(), ...scopeSelection() }));
@@ -231,7 +244,7 @@ $('settings-form').addEventListener('submit', async event => {
 $('import-form').addEventListener('submit', async event => {
   event.preventDefault();
   const button = event.target.querySelector('[type="submit"]'); button.disabled = true;
-  try { await api('/import', { text: $('import-text').value, context: $('import-context').value, title: $('import-title').value || '手动导入', url: $('import-url').value, kind: $('import-kind').value }); notice('原文已导入，正在分析。'); tab('results'); filter = 'all'; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b.dataset.filter === filter)); await refresh(); }
+  try { await api('/import', { text: $('import-text').value, context: $('import-context').value, title: $('import-title').value || '手动导入', url: $('import-url').value, kind: $('import-kind').value }); notice('原文已导入，正在分析。'); tab('results'); filter = 'all'; batch = 'all'; $('result-batch').value = batch; offset = 0; document.querySelectorAll('[data-filter]').forEach(b => b.classList.toggle('selected', b.dataset.filter === filter)); await refresh(); }
   catch (error) { notice(error.message, true); }
   finally { button.disabled = false; }
 });

@@ -9,6 +9,13 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
   const statuses = { running: '正在处理', completed: '任务完成', partial: '部分完成，请查看任务详情', paused: '等待你处理', failed: '任务未完成', cancelled: '已停止', interrupted: '上次任务中断' };
   const split = text => text.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
   const stamp = text => text ? new Date(text).toLocaleString('zh-CN') : '';
+  function RecordMetadata({ item }) {
+    const collection = item.collection;
+    return h(React.Fragment, null,
+      h('p', { className: 'patrol-meta' }, `${item.kind === 'comment' ? '' : `发布：${stamp(item.publishedAt) || '未保存'} · `}采集：${stamp(item.capturedAt) || '未记录'}`),
+      collection?.keywords?.length > 0 && h('p', { className: 'patrol-meta' },
+        `${collection.query ? `检索词：${collection.query} · ` : ''}标题／正文字面命中：${collection.matchedKeywords?.join('、') || '未见命中'}（含正文内话题）`));
+  }
   async function api(path, data, signal) {
     const response = await fetch(BASE + path, data === undefined ? { cache: 'no-store', signal }
       : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(data), signal });
@@ -42,8 +49,9 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     return h('article', { className: 'patrol-record', 'aria-label': item.title || '内容记录' },
       h('div', { className: 'patrol-card-head' }, h('div', null,
         h('h3', null, item.title || '无标题'),
-        h('p', { className: 'patrol-meta' }, `${item.kind === 'comment' ? '评论' : '笔记'} · ${item.author || '手动导入或作者未读取'} · ${stamp(item.capturedAt)}`)),
+        h('p', { className: 'patrol-meta' }, `${item.kind === 'comment' ? '评论' : '笔记'} · ${item.author || '手动导入或作者未读取'}`)),
       h('span', { className: 'patrol-badge ' + (a?.decision === 'review' ? 'review' : a ? 'normal' : '') }, a ? (item.analysisStale || item.analysisError ? '旧结论 · ' : '') + decisions[a.decision] : '未做模型分析')),
+      h(RecordMetadata, { item }),
       h('div', { className: 'patrol-raw' }, item.text || '没有读到正文文字，请查看配图。'),
       item.discussion && h('div', null,
         h(Hint, null, item.discussion.scope === 'note' ? `仅采集笔记，评论未读取${item.discussion.reportedComments != null ? `（接口标注 ${item.discussion.reportedComments} 条）` : ''}` : `已保存 ${item.discussion.commentsRead} 条评论${item.discussion.reportedComments != null ? `／接口标注 ${item.discussion.reportedComments} 条` : ''} · ${item.discussion.complete ? '接口分页已读取完毕' : '评论区未完整读取'}`),
@@ -91,6 +99,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
       h('div', { className: 'patrol-card-head' }, h('h3', null, item.title || '无标题笔记'),
         h('span', { className: 'patrol-badge ' + (item.inspectionResult === 'suspicious' ? 'review' : item.inspectionResult ? 'normal' : '') },
           item.inspectionResult === 'suspicious' ? '可疑' : item.inspectionResult === 'other' ? '其它' : '待分析')),
+      h(RecordMetadata, { item }),
       h(Hint, null, `一篇笔记＋${summary.commentsRead}条已保存评论 · 可疑${summary.suspicious}条 · 其它${summary.other}条 · 待分析${summary.pending}条`),
       pending.length > 0 && h(Hint, null, `待分析组成：${failed}条失败 · ${pending.length - failed}条尚未分析。`),
       retained > 0 && h(Hint, null, `${retained}条保留旧结论（材料、规则或模型已变化），不计入待分析，不会自动重算。`),
@@ -178,6 +187,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const [state, setState] = useState(null), [catalog, setCatalog] = useState(null);
     const [results, setResults] = useState({ total: 0, items: [] });
     const [filter, setFilter] = useState('all'), [offset, setOffset] = useState(0);
+    const [batch, setBatch] = useState('latest');
     const [notice, setNotice] = useState(null), [busy, setBusy] = useState(false);
     const [draft, setDraft] = useState(null), [keywords, setKeywords] = useState(''), [urls, setUrls] = useState('');
     const [users, setUsers] = useState(''), [userKeywordMode, setUserKeywordMode] = useState('and');
@@ -191,12 +201,13 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
     const refresh = useCallback(async signal => {
       const id = ++requestId.current;
       const [next, records] = await Promise.all([api('/status', undefined, signal),
-        api(`/results?filter=${filter}&offset=${offset}&limit=20`, undefined, signal)]);
+        api(`/results?filter=${filter}&batch=${batch}&offset=${offset}&limit=20`, undefined, signal)]);
       if (signal.aborted || id !== requestId.current) return;
       setState(next);
+      if (batch === 'latest' && records.batch === 'all') setBatch('all');
       if (offset > 0 && records.total <= offset) { setOffset(Math.max(0, Math.floor((records.total - 1) / 20) * 20)); } else setResults(records);
       if (!initialized.current) { initialized.current = true; setDraft(next.settings); setSearchDraft(searchValues(next.settings, next.searchOptions)); setKeywords(next.settings.keywords.join('，')); setUsers((next.settings.users || []).join('\n')); setUserKeywordMode(next.settings.userKeywordMode || 'and'); setReadComments(next.settings.readComments !== false); }
-    }, [filter, offset]);
+    }, [filter, batch, offset]);
     useEffect(() => {
       const controller = new AbortController(); lifecycle.current = controller;
       api('/models', undefined, controller.signal).then(setCatalog).catch(error => { if (!controller.signal.aborted) setNotice({ error: true, text: error.message }); });
@@ -224,6 +235,8 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
         if (controller.signal.aborted) return;
         setNotice({ text: result.message || '操作已保存。' });
         if (path === '/data-key') setDataKey('');
+        if (path === '/import') { setBatch('all'); setOffset(0); }
+        if (path === '/start') { setBatch('latest'); setOffset(0); }
         if (path === '/settings') { setDraft(result.settings); setSearchDraft(searchValues(result.settings, result.searchOptions)); }
         await refresh(controller.signal);
         return result;
@@ -306,7 +319,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(SearchControls, { options: state.searchOptions, values: searchDraft, disabled: busy || running, onChange: (key, value) => { setSearchDraft(prev => ({ ...prev, [key]: value })); setDraft(prev => ({ ...prev, [key]: value })); } }),
               h('div', { className: 'patrol-actions' }, h(Button, { disabled: busy || running || !!urls.trim(), onClick: () => act('/settings', { ...state.settings, ...searchDraft, ...searchScope() }) }, '保存搜索范围与选项为默认')),
               h(Hint, null, '选择立即用于下一次巡查；保存为默认后刷新也会保留。指定链接时笔记排序、时间及类型筛选不适用，评论排序仍有效；分析未阅不会重新搜索。'),
-              h(Hint, null, '视频选项只读取接口提供的文字、配图和评论，不识别视频画面或音频。时间范围只提供接口支持的一天、一周、半年。多个关键词依次搜索，找到本轮数量即停止，不是合并后的全局热度排名。'),
+              h(Hint, null, '视频选项只读取接口提供的文字、配图和评论，不识别视频画面或音频。时间范围只提供接口支持的一天、一周、半年。多个关键词先分别检索，再合并候选按所选数值排序；综合排序轮换取各词结果。只覆盖接口已返回的候选。'),
               h(Hint, null, '用户列表按接口顺序读取，笔记排序只作用于关键词搜索；用户笔记的时间和类型在本地筛选，半年按近183天计算。每个用户／关键词最多查找5页候选，未读完会提示。'),
               h('details', null, h('summary', null, '或指定笔记链接'), h(Field, { label: '每行一个链接' }, h('textarea', { value: urls, onChange: e => setUrls(e.target.value), rows: 3, placeholder: '小红书笔记或分享链接' }))),
               h('label', null, h('input', { type: 'checkbox', checked: excludeSeen, onChange: e => setExcludeSeen(e.target.checked) }), ' 排除已查过的笔记'),
@@ -319,7 +332,7 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h('div', { className: 'patrol-actions' }, h(Button, { primary: true, disabled: busy || running, onClick: () => {
                 const list = urls.split('\n').map(s => s.trim()).filter(Boolean); act('/start', { ...(list.length ? { urls: list } : searchScope()), collectionSource, analyze: !collectOnly, excludeSeen, ...searchDraft });
               } }, collectOnly ? '按篇读取（仅采集）' : '按篇读取并分析'),
-              h(Button, { disabled: busy || running, onClick: () => act('/analyze') }, readComments ? '分析未阅篇目' : '分析未阅笔记')),
+              h(Button, { disabled: busy || running, onClick: () => act('/analyze') }, readComments ? '分析全部未阅篇目' : '分析未阅笔记')),
               h(Hint, null, `本轮最多 ${state.settings.maxNotes} 篇，${readComments ? '分页读取评论及回复，直到读完或费用上限' : '只读取笔记，不请求评论及回复'}。本轮最多分析 ${state.settings.discussionNoteLimit} 篇；超出篇目可继续分析。另最多看图 ${state.settings.maxVision} 条${readComments ? '笔记或评论' : '笔记'}。`),
               h(Hint, null, '只读取接口返回的公开内容，不保证包含隐藏或删除的评论。读取不完整会显示原因；不会自动回退到浏览器。第三方 API 不等于平台官方授权。')),
             job && !running && !canContinue && h(Box, { title: statuses[job.status] || job.status }, h('p', null, job.message), job.searchSummary && h(Hint, null, job.searchSummary),
@@ -329,6 +342,9 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               (job.skippedNotes || []).length > 0 && h('details', { open: true }, h('summary', null, '未读取的笔记'), ...job.skippedNotes.map((entry, i) => h('div', { key: i }, h('p', null, entry.reason), h('a', { href: entry.url, target: '_blank', rel: 'noopener noreferrer' }, '手动打开原帖 ↗')))),
               h('details', null, h('summary', null, '查看任务日志'), h('ol', null, ...job.messages.map((log, i) => h('li', { key: i }, stamp(log.at) + ' · ' + log.message))))),
             h('div', { className: 'patrol-result-header' }, h('h2', null, '笔记与评论区'), h('span', { className: 'patrol-meta' }, results.total + ' 篇')),
+            h(Field, { label: '查看范围' }, h('select', { value: batch, onChange: e => { setBatch(e.target.value); setOffset(0); } },
+              h('option', { value: 'latest' }, '最近一轮采集'), h('option', { value: 'all' }, '全部记录'))),
+            h(Hint, null, results.batchInfo ? `下方仅显示 ${stamp(results.batchInfo.startedAt)} 这一轮采集，共 ${results.scopeTotal} 篇；上方统计包含全部历史记录。` : '下方显示全部保存记录，包含历次采集及手动导入。上方统计包含全部历史记录。'),
             h('div', { className: 'patrol-actions patrol-filters', role: 'group', 'aria-label': '筛选结果' }, ...[['all', '未阅'], ['suspicious', '可疑'], ['other', '其它'], ['unanalyzed', '待分析'], ['read', '已阅']].map(([id, label]) =>
               h(Button, { key: id, 'aria-pressed': filter === id, onClick: () => { setFilter(id); setOffset(0); } }, label))),
             results.items.length ? results.items.map(item => h(DiscussionCard, { key: item.id, item, busy, running, act, readComments, hasBackground: !!state.background?.activeId && state.background.enabled })) : h(Box, { title: filter === 'read' ? '还没有已阅记录' : '当前列表没有未阅内容' }, h(Hint, null, filter === 'read' ? '在内容卡片点击“已阅”，之后可以在这里找回。' : '已阅内容在“已阅”中保留；可以换个筛选或继续巡查。')),
@@ -381,12 +397,12 @@ window.__ModuleLoader__.load({ id: 'dsh-dafeiyu-patrol', factory: require => {
               h(Field, { label: '判断规则' }, h('textarea', { value: draft.rules, onChange: updateDraft('rules'), rows: 16, required: true, minLength: 20, maxLength: 12000 }))),
             h(Button, { type: 'submit', primary: true, disabled: busy || running }, '保存设置')),
           tab === 'topic' && h(Topic, { context: state.context, busy, running, act, openBuilder })),
-        h('footer', { className: 'patrol-footer' }, '鲸声守望 0.9.2（实验版） · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
+        h('footer', { className: 'patrol-footer' }, '鲸声守望 0.9.3（实验版） · 判断依据是具体言行和语境 · 配图机器识别须核对 · 记录保存在本机')));
   }
   return { name: 'dafeiyu-patrol-client', inject: ['slots', 'layout', 'sessions', 'remote', 'remote.agentPresets', 'uiWorkspace'], apply(ctx) {
     // Only our stylesheet is added to the document, with an explicit disposer.
     ctx.effect(() => {
-      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.9.2-desk8';
+      const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/plugins/dafeiyu-patrol/native.css?v=0.9.3-desk8';
       document.head.append(link); return () => link.remove();
     }, 'patrol native stylesheet');
     ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID,

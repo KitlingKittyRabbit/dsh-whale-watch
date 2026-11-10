@@ -14,10 +14,11 @@ export function userReference(raw) {
   } catch {}
   throw new Error('指定用户请填写小红书完整主页链接或24位用户 ID；不能填写昵称、小红书号或笔记链接');
 }
-export function matchesKeywords(note, keywords) {
-  const text = `${note.title}\n${note.content}`.normalize('NFKC').toLocaleLowerCase('und');
-  return keywords.some(word => text.includes(word.normalize('NFKC').toLocaleLowerCase('und')));
+export function keywordHits(note, keywords) {
+  const text = `${note.title || ''}\n${note.content || ''}`.normalize('NFKC').toLocaleLowerCase('und');
+  return keywords.filter(word => text.includes(word.normalize('NFKC').toLocaleLowerCase('und')));
 }
+export function matchesKeywords(note, keywords) { return keywordHits(note, keywords).length > 0; }
 export function matchesUserFilters(note, options, now = Date.now()) {
   if (options.noteType !== 'all' && note.note_type !== options.noteType) return false;
   if (options.publishTimeRange === 'all') return true;

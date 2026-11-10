@@ -143,6 +143,7 @@ export class Store {
     const identity = record.sourceKey || hash(record.url + '\n' + record.kind + '\n' + record.text + '\n' + record.context);
     const id = hash(identity).slice(0, 24);
     const existing = this.data.items.find(item => item.id === id);
+    if (!record.publishedAt && existing?.publishedAt) record = { ...record, publishedAt: existing.publishedAt };
     const noteId = collectedNoteId(record);
     // Refreshing a note without comments must preserve the previous comment snapshot.
     if (record.lastCapture?.scope === 'note' && existing?.discussion?.sourceKeys?.length) record = { ...record, discussion: existing.discussion };
@@ -155,7 +156,10 @@ export class Store {
         const history = [...(existing.history || []), { text: existing.text, analysis: existing.analysis, review: existing.review, images: existing.images, vision: existing.vision, readAt: existing.readAt, at: now }].slice(-5);
         Object.assign(existing, record, { contentHash, analysis: null, analysisKey: null, analysisError: null, review: { verdict: 'pending', note: '' }, history, vision: null, readAt: null });
       }
-      existing.lastSeenAt = now; if (record.lastCapture) existing.lastCapture = record.lastCapture; if (record.images) existing.images = record.images; existing.url = record.url; if (persist) await this.save(); return existing;
+      existing.lastSeenAt = now; if (record.lastCapture) existing.lastCapture = record.lastCapture; if (record.images) existing.images = record.images;
+      if (record.publishedAt) existing.publishedAt = record.publishedAt;
+      if (record.collection) existing.collection = record.collection;
+      existing.url = record.url; if (persist) await this.save(); return existing;
     }
     const item = { ...record, id, contentHash, capturedAt: now, lastSeenAt: now, analysis: null, readAt: null, review: { verdict: 'pending', note: '' } };
     this.data.items.unshift(item); if (persist) await this.save(); return item;

@@ -25,7 +25,7 @@ test('浏览器提取保留回复上下文，避免把子回复并入上级原�
   assert.equal(data.comments[1].text, '我反对骚扰');
   assert.match(data.comments[1].context, /上级评论：去骚扰她/);
   assert.equal(data.comments[1].coverage.parentMissing, false);
-  await page.setContent(`<div class="note-container"><div id="detail-title">长背景</div><div id="detail-desc">${'甲'.repeat(6001)}</div><div class="comment-item" id="short"><div class="content">辛苦帖主</div></div></div>`);
+  await page.setContent(`<div class="note-container"><div id="detail-title">长背景</div><div id="detail-desc">${'甲'.repeat(6001)}</div><div class="comment-item" id="short"><div class="content">辛苦帖主</div></div></div>`, { waitUntil: 'domcontentloaded' });
   const longBackground = await page.evaluate(({ source }) => (0, eval)(`(${source})`)(document, 'https://www.xiaohongshu.com/explore/6ac119d5000000001500fd74', 10), { source: extractNote.toString() });
   assert.equal(longBackground.comments[0].text, '辛苦帖主');
   assert.equal(longBackground.comments[0].coverage.textTruncated, false);
